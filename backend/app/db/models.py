@@ -85,3 +85,36 @@ class RiskAssessment(Base):
 
     # Relationships
     quote = relationship("Quote", back_populates="assessment")
+
+
+class Payment(Base):
+    """Payment record model for PayPal Sandbox transactions per DATA_MODEL.md."""
+
+    __tablename__ = "payments"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    shipment_id = Column(String(36), ForeignKey("shipments.id", ondelete="CASCADE"), nullable=False, index=True)
+    quote_id = Column(String(36), ForeignKey("quotes.id", ondelete="RESTRICT"), nullable=False, index=True)
+    amount_snapshot = Column(Numeric(12, 2), nullable=False)
+    currency_snapshot = Column(String(10), nullable=False)
+    provider = Column(String(50), nullable=False, default="paypal_sandbox")
+    provider_order_id = Column(String(100), nullable=False, unique=True, index=True)
+    provider_capture_id = Column(String(100), nullable=True)
+    status = Column(String(50), nullable=False, default="CREATED")  # CREATED, APPROVED, CAPTURED, FAILED, CANCELLED, REVIEW_REQUIRED, REFUNDED
+    idempotency_key = Column(String(100), nullable=True, index=True)
+    last_verified_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class WebhookEvent(Base):
+    """Webhook event deduplication log per DATA_MODEL.md."""
+
+    __tablename__ = "webhook_events"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider_event_id = Column(String(150), nullable=False, unique=True, index=True)
+    event_type = Column(String(100), nullable=False)
+    verification_status = Column(String(50), nullable=False, default="REJECTED")
+    processing_status = Column(String(50), nullable=False, default="RECEIVED")
+    received_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)

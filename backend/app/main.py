@@ -13,7 +13,7 @@ from app.config import settings
 from app.db.models import Base
 from app.db.seed import reset_demo_data, seed_demo_data
 from app.db.session import SessionLocal, engine, get_db
-from app.routes import quotes, shipments
+from app.routes import copilot, payments, quotes, shipments
 
 
 @asynccontextmanager
@@ -83,6 +83,8 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
 # Include API routers
 app.include_router(shipments.router)
 app.include_router(quotes.router)
+app.include_router(copilot.router)
+app.include_router(payments.router)
 
 
 @app.get("/health", tags=["System"])
