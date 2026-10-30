@@ -165,3 +165,28 @@ class ErrorResponse(BaseModel):
     """Standardized error wrapper."""
 
     error: ErrorDetail
+
+
+class CopilotRequest(BaseModel):
+    """Schema for copilot comparison request."""
+
+    shipment_id: str
+    quote_ids: list[str]
+
+
+class ComparisonDetail(BaseModel):
+    """Schema for quote comparison detail."""
+
+    quote_id: str
+    advantages: list[str]
+    concerns: list[str]
+
+
+class CopilotResponse(BaseModel):
+    """Schema for copilot comparison output."""
+
+    summary: str
+    comparison: list[ComparisonDetail]
+    missing_information: list[str]
+    next_questions: list[str]
+    disclaimer: str = "Human review required; outputs are estimates."
