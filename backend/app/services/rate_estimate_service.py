@@ -62,7 +62,7 @@ def calculate_shipment_estimate(shipment: Shipment, peer_quotes: list[Quote]) ->
     )
 
     if len(matching_amounts) >= 2:
-        median_val = Decimal(str(statistics.median([float(a) for a in matching_amounts]))).quantize(Decimal("0.01"))
+        median_val = statistics.median(matching_amounts).quantize(Decimal("0.01"))
         min_val = min(matching_amounts)
         max_val = max(matching_amounts)
         return RateEstimate(
@@ -93,5 +93,5 @@ def calculate_variance_vs_median(quote_amount: Decimal, median_rate: Optional[De
     """Calculate percentage variance between a quote and the median benchmark."""
     if median_rate is None or median_rate == 0:
         return None
-    diff = float(quote_amount - median_rate)
-    return round((diff / float(median_rate)) * 100, 1)
+    variance = ((quote_amount - median_rate) / median_rate) * Decimal("100")
+    return float(variance.quantize(Decimal("0.1")))

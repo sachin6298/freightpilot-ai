@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
-from app.db.models import Shipment, Quote
+from app.db.models import Shipment, Quote, Payment
 
 DEMO_SHIPMENT_ID = "demo-shipment-001"
 
@@ -26,6 +26,7 @@ def seed_demo_data(db: Session) -> Shipment:
         required_arrival_date=date(2026, 12, 5),
         currency="USD",
         mode="DEMO",
+        status="QUOTED",
     )
     db.add(demo_shipment)
     db.flush()
@@ -107,7 +108,13 @@ def seed_demo_data(db: Session) -> Shipment:
 def reset_demo_data(db: Session) -> Shipment:
     """Clear and re-seed demo shipment and quotes."""
     shipment = db.query(Shipment).filter(Shipment.id == DEMO_SHIPMENT_ID).first()
-    if shipment:
-        db.delete(shipment)
-        db.commit()
+    if shipment is None:
+        return seed_demo_data(db)
+
+    # Never delete a shipment or quote referenced by a provider payment record.
+    payment_exists = db.query(Payment.id).filter(Payment.shipment_id == DEMO_SHIPMENT_ID).first()
+    if payment_exists:
+        return shipment
+    db.delete(shipment)
+    db.commit()
     return seed_demo_data(db)

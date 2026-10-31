@@ -10,17 +10,18 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.models import Base
 from app.db.seed import reset_demo_data, seed_demo_data
-from app.db.session import SessionLocal, engine, get_db
-from app.routes import copilot, payments, quotes, shipments
+from app.db.session import SessionLocal, get_db
+from app.db.migrate import initialize_database
+from app.routes import admin, analytics, auth, carriers, copilot, notifications, payments, quotes, shipments, tracking
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager for startup and shutdown events."""
-    # Ensure all tables exist
-    Base.metadata.create_all(bind=engine)
+    # Initialize new tables and migrate compatible columns from the previous prototype.
+    if settings.AUTO_CREATE_DB:
+        initialize_database()
 
     # Seed demo data if in DEMO_MODE
     if settings.DEMO_MODE:
@@ -70,7 +71,7 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
         msg = error.get("msg", "Invalid value")
         messages.append(f"{loc}: {msg}" if loc else msg)
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=422,
         content={
             "error": {
                 "code": "VALIDATION_ERROR",
@@ -81,10 +82,16 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
 
 
 # Include API routers
+app.include_router(auth.router)
 app.include_router(shipments.router)
+app.include_router(tracking.router)
 app.include_router(quotes.router)
 app.include_router(copilot.router)
 app.include_router(payments.router)
+app.include_router(analytics.router)
+app.include_router(notifications.router)
+app.include_router(admin.router)
+app.include_router(carriers.router)
 
 
 @app.get("/health", tags=["System"])
@@ -95,6 +102,7 @@ def health_check() -> dict[str, str]:
         "status": "ok",
         "app": "freightpilot-ai",
         "mode": mode,
+        "database": "configured",
     }
 
 

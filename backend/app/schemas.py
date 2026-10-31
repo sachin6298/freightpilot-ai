@@ -51,6 +51,7 @@ class ShipmentResponse(BaseModel):
     required_arrival_date: Optional[date]
     currency: str
     mode: str
+    status: str = "DRAFT"
     created_at: datetime
     updated_at: datetime
     quotes_count: Optional[int] = None

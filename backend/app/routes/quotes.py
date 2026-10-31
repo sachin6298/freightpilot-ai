@@ -1,98 +1,75 @@
-"""Quote endpoints for FreightPilot AI."""
+"""Quote detail and deterministic risk assessment endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.db.models import Quote, RiskAssessment, Shipment
+from app.core.access import get_accessible_shipment
+from app.core.audit import write_audit
+from app.core.security import get_optional_current_user
+from app.db.models import Quote, RiskAssessment, Shipment, User
 from app.db.session import get_db
 from app.schemas import QuoteResponse, RiskAssessmentResponse
+from app.services.rate_estimate_service import calculate_shipment_estimate
 from app.services.risk_service import assess_quote_risk
 
 router = APIRouter(prefix="/api/quotes", tags=["Quotes"])
 
 
 @router.get("/{quote_id}", response_model=QuoteResponse)
-def get_quote(quote_id: str, db: Session = Depends(get_db)) -> QuoteResponse:
-    """Get a single quote by ID with its latest risk assessment."""
+def get_quote(
+    quote_id: str, db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_current_user),
+) -> QuoteResponse:
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "QUOTE_NOT_FOUND", "message": f"Quote '{quote_id}' not found."},
-        )
-
-    shipment = db.query(Shipment).filter(Shipment.id == quote.shipment_id).first()
-    peer_quotes = db.query(Quote).filter(Quote.shipment_id == quote.shipment_id).all() if shipment else []
-
-    resp = QuoteResponse.model_validate(quote)
-
-    if shipment:
-        assessment_data = assess_quote_risk(quote, shipment, peer_quotes)
-        resp.assessment = RiskAssessmentResponse(
-            score=assessment_data["score"],
-            label=assessment_data["label"],
-            flags=assessment_data["flags"],
-            method_version=assessment_data["method_version"],
-            benchmark_variance_pct=assessment_data["benchmark_variance_pct"],
-        )
-        resp.benchmark_variance_pct = assessment_data["benchmark_variance_pct"]
-    elif quote.assessment:
-        resp.assessment = RiskAssessmentResponse(
-            score=quote.assessment.score,
-            label=quote.assessment.label,
-            flags=quote.assessment.flags,
-            method_version=quote.assessment.method_version,
-            assessed_at=quote.assessment.assessed_at,
-        )
-
-    return resp
+        raise HTTPException(status_code=404, detail={"code": "QUOTE_NOT_FOUND", "message": f"Quote '{quote_id}' not found."})
+    shipment = get_accessible_shipment(db, quote.shipment_id, user)
+    peers = db.query(Quote).filter(Quote.shipment_id == quote.shipment_id).all()
+    benchmark = calculate_shipment_estimate(shipment, peers)
+    data = assess_quote_risk(quote, shipment, peers, benchmark=benchmark)
+    assessment = db.query(RiskAssessment).filter(RiskAssessment.quote_id == quote.id).first()
+    if assessment is None:
+        assessment = RiskAssessment(quote_id=quote.id)
+        db.add(assessment)
+    assessment.score = data["score"]
+    assessment.label = data["label"]
+    assessment.flags = data["flags"]
+    assessment.method_version = data["method_version"]
+    db.commit()
+    result = QuoteResponse.model_validate(quote)
+    result.assessment = RiskAssessmentResponse(
+        score=data["score"], label=data["label"], flags=data["flags"],
+        method_version=data["method_version"], benchmark_variance_pct=data["benchmark_variance_pct"],
+    )
+    result.benchmark_variance_pct = data["benchmark_variance_pct"]
+    return result
 
 
 @router.post("/{quote_id}/assess", response_model=QuoteResponse)
-def recalculate_quote_assessment(quote_id: str, db: Session = Depends(get_db)) -> QuoteResponse:
-    """Recalculate deterministic assessment against current quote and shipment state per API_SPEC.md."""
+def assess_quote(
+    quote_id: str, db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_current_user),
+) -> QuoteResponse:
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "QUOTE_NOT_FOUND", "message": f"Quote '{quote_id}' not found."},
-        )
-
-    shipment = db.query(Shipment).filter(Shipment.id == quote.shipment_id).first()
-    if not shipment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "SHIPMENT_NOT_FOUND", "message": f"Parent shipment '{quote.shipment_id}' not found."},
-        )
-
-    peer_quotes = db.query(Quote).filter(Quote.shipment_id == quote.shipment_id).all()
-    assessment_data = assess_quote_risk(quote, shipment, peer_quotes)
-
-    # Persist or update RiskAssessment record
-    db_assessment = db.query(RiskAssessment).filter(RiskAssessment.quote_id == quote.id).first()
-    if not db_assessment:
-        db_assessment = RiskAssessment(
-            quote_id=quote.id,
-            score=assessment_data["score"],
-            label=assessment_data["label"],
-            flags=assessment_data["flags"],
-            method_version=assessment_data["method_version"],
-        )
-        db.add(db_assessment)
-    else:
-        db_assessment.score = assessment_data["score"]
-        db_assessment.label = assessment_data["label"]
-        db_assessment.flags = assessment_data["flags"]
-        db_assessment.method_version = assessment_data["method_version"]
+        raise HTTPException(status_code=404, detail={"code": "QUOTE_NOT_FOUND", "message": f"Quote '{quote_id}' not found."})
+    shipment = get_accessible_shipment(db, quote.shipment_id, user)
+    peers = db.query(Quote).filter(Quote.shipment_id == quote.shipment_id).all()
+    benchmark = calculate_shipment_estimate(shipment, peers)
+    data = assess_quote_risk(quote, shipment, peers, benchmark=benchmark)
+    assessment = db.query(RiskAssessment).filter(RiskAssessment.quote_id == quote.id).first()
+    if assessment is None:
+        assessment = RiskAssessment(quote_id=quote.id)
+        db.add(assessment)
+    assessment.score, assessment.label = data["score"], data["label"]
+    assessment.flags, assessment.method_version = data["flags"], data["method_version"]
+    write_audit(db, entity_type="QUOTE", entity_id=quote.id, action="RISK_ASSESSED",
+                user_id=user.id if user else None, details={"score": data["score"], "label": data["label"]})
     db.commit()
-
-    resp = QuoteResponse.model_validate(quote)
-    resp.assessment = RiskAssessmentResponse(
-        score=assessment_data["score"],
-        label=assessment_data["label"],
-        flags=assessment_data["flags"],
-        method_version=assessment_data["method_version"],
-        benchmark_variance_pct=assessment_data["benchmark_variance_pct"],
+    result = QuoteResponse.model_validate(quote)
+    result.assessment = RiskAssessmentResponse(
+        score=data["score"], label=data["label"], flags=data["flags"],
+        method_version=data["method_version"], benchmark_variance_pct=data["benchmark_variance_pct"],
     )
-    resp.benchmark_variance_pct = assessment_data["benchmark_variance_pct"]
-    return resp
+    result.benchmark_variance_pct = data["benchmark_variance_pct"]
+    return result
