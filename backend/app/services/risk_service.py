@@ -9,7 +9,7 @@ Rules strictly follow AI_RISK_ENGINE.md. All flags expose:
 """
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
 from app.db.models import Quote, Shipment
@@ -52,13 +52,14 @@ def assess_quote_risk(
     quote: Quote,
     shipment: Shipment,
     peer_quotes: list[Quote],
+    benchmark=None,
 ) -> dict[str, Any]:
     """Calculate deterministic risk flags, 0-100 score, and label for a quote."""
     flags: list[RiskFlag] = []
     now = datetime.now(timezone.utc)
 
     # 1. Rate estimate benchmark for outlier detection
-    estimate = calculate_shipment_estimate(shipment, peer_quotes)
+    estimate = benchmark or calculate_shipment_estimate(shipment, peer_quotes)
     median_rate = estimate.median_rate
 
     # Rule 1: Currency Mismatch
@@ -184,14 +185,18 @@ def assess_quote_risk(
 
     # Rule 7: Advance Payment Terms Review
     advance_pct = terms.get("advance_pct")
+    try:
+        high_advance = advance_pct is not None and Decimal(str(advance_pct)) >= Decimal("50")
+    except (InvalidOperation, TypeError, ValueError):
+        high_advance = False
     payment_terms_str = str(terms.get("payment_terms", "")).lower()
-    if (advance_pct and advance_pct >= 50) or "100% advance" in payment_terms_str:
+    if high_advance or "100% advance" in payment_terms_str:
         flags.append(
             RiskFlag(
                 code="ADVANCE_TERM_REVIEW",
                 severity="MEDIUM",
                 title="Substantial Advance Payment Requested",
-                evidence=f"Payment terms require {advance_pct or 100}% upfront advance before cargo release.",
+                evidence=f"Payment terms require {advance_pct if high_advance else 100}% upfront advance before cargo release.",
                 recommended_check="Review commercial terms and check if carrier provides letter of credit or escrow.",
                 weight=25,
             )

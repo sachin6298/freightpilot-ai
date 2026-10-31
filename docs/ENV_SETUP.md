@@ -24,7 +24,6 @@ Do not place real keys in this documentation, source code, screenshots, public i
 ```dotenv
 VITE_API_BASE_URL=http://localhost:8000
 VITE_PAYPAL_CLIENT_ID=replace_with_sandbox_client_id
-VITE_PAYPAL_CURRENCY=USD
 ```
 
 Only expose values that are safe for the browser. Do not put `PAYPAL_CLIENT_SECRET` or `AI_API_KEY` in the frontend file.
