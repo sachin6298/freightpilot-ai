@@ -14,7 +14,16 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DEMO_MODE: bool = True
     AUTO_CREATE_DB: bool = True
-    DATABASE_URL: str = "sqlite:///./freightpilot.db"
+
+    # Database Configuration - Default to PostgreSQL for production
+    DATABASE_URL: str = "postgresql://freightpilot:password@localhost/freightpilot"
+
+    # PostgreSQL Connection Pooling
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 3600
+
     FRONTEND_ORIGIN: str = "http://localhost:5173"
 
     # Authentication remains optional for the existing local demo frontend.
@@ -29,6 +38,18 @@ class Settings(BaseSettings):
     PAYPAL_CLIENT_SECRET: str = ""
     PAYPAL_WEBHOOK_ID: str = ""
     PAYPAL_TIMEOUT_SECONDS: float = 15.0
+
+    # OAuth Provider Configuration
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
+
+    APPLE_CLIENT_ID: str = ""
+    APPLE_CLIENT_SECRET: str = ""
+    APPLE_TEAM_ID: str = ""
+    APPLE_KEY_ID: str = ""
+    APPLE_PRIVATE_KEY: str = ""
+    APPLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/apple/callback"
 
     AI_PROVIDER: str = "gemini"
     AI_API_KEY: str = ""

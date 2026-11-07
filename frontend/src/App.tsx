@@ -115,19 +115,41 @@ function EmptyState({ title, description, action }: { title: string; description
 
 function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void }): React.ReactElement {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [role, setRole] = useState<'BUYER' | 'SELLER'>('BUYER');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [contactPerson, setContactPerson] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setError(null);
     try {
-      const response = mode === 'login' ? await login(email, password) : await register(email, password);
+      let response;
+      if (mode === 'login') {
+        response = await login(email, password);
+      } else if (role === 'BUYER') {
+        response = await registerBuyer({ email, password, company_name: businessName || undefined, contact_person: contactPerson || undefined, phone_number: contactPhone || undefined });
+      } else {
+        response = await registerSeller({ email, password, business_name: businessName || 'Freight Carrier LLC', business_address: businessAddress || '100 Port Road', country: 'US', contact_person: contactPerson || 'Operations Contact', contact_phone: contactPhone || '+1-555-0199' });
+      }
       onAuthenticated(response.user, response.access_token);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Authentication failed.'); }
     finally { setBusy(false); }
   };
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card auth-card" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow">FREIGHTPILOT ACCOUNT</span><h3>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h3><p>Sign in to keep shipment activity tied to your account.</p></div><button className="icon-button" onClick={onClose} aria-label="Close"><Icon name="close"/></button></div><form onSubmit={submit} className="form-stack"><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="name@company.com"/></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={mode === 'register' ? 10 : 1} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={mode === 'register' ? 'At least 10 characters' : 'Your password'}/></label>{error && <div className="inline-alert inline-alert-danger">{error}</div>}<button className="btn btn-primary btn-full" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button><button type="button" className="text-button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}>{mode === 'login' ? 'New to FreightPilot? Create an account' : 'Already have an account? Sign in'}</button></form><p className="fine-print">Local demo access remains available without signing in while backend AUTH_REQUIRED=false.</p></div></div>;
+
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card auth-card" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow">FREIGHTPILOT ACCOUNT</span><h3>{mode === 'login' ? 'Welcome back' : `Create ${role.toLowerCase()} account`}</h3><p>Secure freight procurement with role-based isolation.</p></div><button className="icon-button" onClick={onClose} aria-label="Close"><Icon name="close"/></button></div>
+    {mode === 'register' && <div className="role-selector" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}><button type="button" className={`btn btn-sm ${role === 'BUYER' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRole('BUYER')}>Buyer Account</button><button type="button" className={`btn btn-sm ${role === 'SELLER' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRole('SELLER')}>Seller / Carrier Account</button></div>}
+    <form onSubmit={submit} className="form-stack"><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="name@company.com"/></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={mode === 'register' ? 10 : 1} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={mode === 'register' ? 'At least 10 characters' : 'Your password'}/></label>
+      {mode === 'register' && role === 'SELLER' && <>
+        <label>Company / Business Name<input value={businessName} onChange={(e) => setBusinessName(e.target.value)} required placeholder="e.g. Apex Marine Freight Ltd."/></label>
+        <label>Business Address<input value={businessAddress} onChange={(e) => setBusinessAddress(e.target.value)} required placeholder="Headquarters street and city"/></label>
+        <label>Contact Phone<input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} required placeholder="+1-555-0199"/></label>
+      </>}
+      {error && <div className="inline-alert inline-alert-danger">{error}</div>}<button className="btn btn-primary btn-full" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button><button type="button" className="text-button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}>{mode === 'login' ? 'New to FreightPilot? Create an account' : 'Already have an account? Sign in'}</button></form><p className="fine-print">Local demo access remains available without signing in while backend AUTH_REQUIRED=false.</p></div></div>;
 }
 
 export default function App(): React.ReactElement {

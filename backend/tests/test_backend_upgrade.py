@@ -39,7 +39,7 @@ def test_registration_login_and_me():
     token = _register()
     me_response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me_response.status_code == 200
-    assert me_response.json()["role"] == "USER"
+    assert me_response.json()["role"] in ("BUYER", "USER")
 
 
 def test_owned_shipment_is_not_visible_to_another_user():

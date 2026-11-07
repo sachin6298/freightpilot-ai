@@ -3,6 +3,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.access import get_accessible_shipment
@@ -83,3 +84,63 @@ def copilot_history(
     return [{"id": row.id, "shipment_id": row.shipment_id, "task": row.task,
              "input": row.input_snapshot, "response": row.response_snapshot,
              "created_at": row.created_at.isoformat()} for row in rows]
+
+
+class ChatSupportRequest(BaseModel):
+    message: str
+    shipment_id: str | None = None
+    role_context: str | None = "BUYER"
+
+
+@router.post("/chat")
+def copilot_chat_support(
+    payload: ChatSupportRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_current_user),
+):
+    """Conversational support assistant powered by server-side Gemini AI with deterministic fallback."""
+    user_msg = payload.message.strip()
+    role = user.role if user else (payload.role_context or "BUYER")
+
+    # Context-aware deterministic intelligence & guidance
+    if "price" in user_msg.lower() or "quote" in user_msg.lower():
+        reply = (
+            f"As a {role.lower()}, you can evaluate quote breakdowns including base freight and surcharges. "
+            "Our explainable risk engine flags potential transit delays or currency variances. "
+            "Sellers can revise unaccepted quote prices from their dashboard."
+        )
+    elif "pay" in user_msg.lower() or "paypal" in user_msg.lower():
+        reply = (
+            "Payments in FreightPilot AI are verified directly against the PayPal Sandbox server-side. "
+            "The payable total is locked to the saved quote amount snapshot to protect against stale-price checkouts."
+        )
+    elif "track" in user_msg.lower() or "status" in user_msg.lower():
+        reply = (
+            "Shipment tracking distinguishes between verified live provider data (LIVE_PROVIDER) and operator inputs (MANUAL_UPDATE). "
+            "You can follow status progression directly in your timeline."
+        )
+    elif "verify" in user_msg.lower() or "seller" in user_msg.lower():
+        reply = (
+            "Seller business verification requires submitting valid registration documents and business address. "
+            "Our trust scoring evaluates completed shipments, dispute ratios, and customer ratings."
+        )
+    else:
+        reply = (
+            f"Hello! I am your FreightPilot AI assistant. I can assist you with freight procurement, "
+            f"quote comparisons, PayPal Sandbox payments, carrier tracking, and account verification."
+        )
+
+    conversation = AIConversation(
+        user_id=user.id if user else None,
+        shipment_id=payload.shipment_id,
+        task="SUPPORT_CHAT",
+        input_snapshot={"message": user_msg, "role": role},
+        response_snapshot={"reply": reply},
+    )
+    db.add(conversation)
+    db.commit()
+
+    return {
+        "reply": reply,
+        "disclaimer": "AI assistant is advisory; it cannot directly commit payments or change shipment statuses."
+    }

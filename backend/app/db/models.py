@@ -22,12 +22,121 @@ class User(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(254), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
-    role = Column(String(30), nullable=False, default="USER")
+    role = Column(String(30), nullable=False, default="BUYER")
     is_active = Column(Boolean, nullable=False, default=True)
+    email_verified = Column(Boolean, nullable=False, default=False)
+    phone_verified = Column(Boolean, nullable=False, default=False)
+    phone_number = Column(String(30), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
 
     shipments = relationship("Shipment", back_populates="owner")
+    buyer_profile = relationship("BuyerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    seller_profile = relationship("SellerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan", foreign_keys="[SellerProfile.user_id]")
+    email_verifications = relationship("EmailVerification", back_populates="user", cascade="all, delete-orphan")
+    phone_verifications = relationship("PhoneVerification", back_populates="user", cascade="all, delete-orphan")
+
+
+class BuyerProfile(Base):
+    __tablename__ = "buyer_profiles"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    company_name = Column(String(200), nullable=True)
+    contact_person = Column(String(150), nullable=True)
+    phone_number = Column(String(30), nullable=True)
+    billing_address = Column(Text, nullable=True)
+    default_currency = Column(String(10), nullable=True, default="USD")
+    preferred_regions = Column(JSON, nullable=True, default=list)
+    notification_preferences = Column(JSON, nullable=True, default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+    user = relationship("User", back_populates="buyer_profile")
+
+
+class SellerProfile(Base):
+    __tablename__ = "seller_profiles"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    business_name = Column(String(200), nullable=False)
+    registration_number = Column(String(100), nullable=True)
+    tax_id = Column(String(100), nullable=True)
+    business_address = Column(Text, nullable=False)
+    country = Column(String(2), nullable=False)
+    contact_person = Column(String(150), nullable=False)
+    contact_email = Column(String(254), nullable=False)
+    contact_phone = Column(String(30), nullable=False)
+    business_type = Column(String(50), nullable=True)
+    years_in_operation = Column(Integer, nullable=True)
+    insurance_coverage = Column(JSON, nullable=True)
+    service_regions = Column(JSON, nullable=True, default=list)
+    transport_modes = Column(JSON, nullable=True, default=list)
+    fleet_capacity = Column(Numeric(12, 2), nullable=True)
+    verification_status = Column(String(30), nullable=False, default="UNVERIFIED", index=True)
+    trust_score = Column(Integer, nullable=False, default=50)
+    verification_notes = Column(Text, nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    verified_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+    user = relationship("User", back_populates="seller_profile", foreign_keys=[user_id])
+    verifier = relationship("User", foreign_keys=[verified_by])
+    verification_documents = relationship("SellerVerificationDocument", back_populates="seller_profile", cascade="all, delete-orphan")
+
+
+class SellerVerificationDocument(Base):
+    __tablename__ = "seller_verification_documents"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    seller_profile_id = Column(String(36), ForeignKey("seller_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_type = Column(String(50), nullable=False)
+    document_name = Column(String(200), nullable=False)
+    file_path = Column(String(500), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    mime_type = Column(String(100), nullable=True)
+    verification_status = Column(String(30), nullable=False, default="PENDING")
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    verified_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+    seller_profile = relationship("SellerProfile", back_populates="verification_documents")
+    verifier = relationship("User", foreign_keys=[verified_by])
+
+
+class EmailVerification(Base):
+    __tablename__ = "email_verifications"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(254), nullable=False)
+    token = Column(String(100), nullable=False)
+    token_hash = Column(String(255), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    user = relationship("User", back_populates="email_verifications")
+
+
+class PhoneVerification(Base):
+    __tablename__ = "phone_verifications"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    phone_number = Column(String(30), nullable=False)
+    otp_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    last_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    user = relationship("User", back_populates="phone_verifications")
 
 
 class Shipment(Base):
@@ -60,6 +169,7 @@ class Quote(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     shipment_id = Column(String(36), ForeignKey("shipments.id", ondelete="CASCADE"), nullable=False, index=True)
+    seller_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     provider_label = Column(String(150), nullable=False)
     reference = Column(String(100), nullable=False)
     base_amount = Column(Numeric(12, 2), nullable=False)
@@ -76,6 +186,73 @@ class Quote(Base):
 
     shipment = relationship("Shipment", back_populates="quotes")
     assessment = relationship("RiskAssessment", back_populates="quote", uselist=False, cascade="all, delete-orphan")
+    price_revisions = relationship("QuotePriceRevision", back_populates="quote", cascade="all, delete-orphan", order_by="QuotePriceRevision.revision_number.desc()")
+    counter_offers = relationship("CounterOffer", back_populates="quote", cascade="all, delete-orphan", order_by="CounterOffer.created_at.desc()")
+
+
+class QuotePriceRevision(Base):
+    __tablename__ = "quote_price_revisions"
+    __table_args__ = (Index("ix_price_revisions_quote_rev", "quote_id", "revision_number"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    quote_id = Column(String(36), ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
+    seller_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    revision_number = Column(Integer, nullable=False, default=1)
+    original_amount = Column(Numeric(12, 2), nullable=False)
+    previous_amount = Column(Numeric(12, 2), nullable=False)
+    revised_amount = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String(10), nullable=False, default="USD")
+    fee_breakdown = Column(JSON, nullable=False, default=dict)
+    revision_reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    quote = relationship("Quote", back_populates="price_revisions")
+    changed_by = relationship("User", foreign_keys=[seller_id])
+
+
+class CounterOffer(Base):
+    __tablename__ = "counter_offers"
+    __table_args__ = (Index("ix_counter_offers_quote_status", "quote_id", "status"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    quote_id = Column(String(36), ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
+    buyer_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    seller_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    original_amount = Column(Numeric(12, 2), nullable=False)
+    counter_amount = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String(10), nullable=False, default="USD")
+    status = Column(String(30), nullable=False, default="OPEN", index=True)
+    notes = Column(Text, nullable=True)
+    seller_response = Column(Text, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+    quote = relationship("Quote", back_populates="counter_offers")
+    buyer = relationship("User", foreign_keys=[buyer_id])
+    seller = relationship("User", foreign_keys=[seller_id])
+
+
+class Settlement(Base):
+    __tablename__ = "settlements"
+    __table_args__ = (Index("ix_settlements_payment_status", "payment_id", "status"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    payment_id = Column(String(36), ForeignKey("payments.id", ondelete="RESTRICT"), nullable=False, unique=True, index=True)
+    seller_id = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    buyer_payment_amount = Column(Numeric(12, 2), nullable=False)
+    platform_fee = Column(Numeric(12, 2), nullable=False, default=0.0)
+    applicable_taxes = Column(Numeric(12, 2), nullable=False, default=0.0)
+    seller_payable_amount = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String(10), nullable=False, default="USD")
+    status = Column(String(30), nullable=False, default="PENDING", index=True)
+    payout_reference = Column(String(100), nullable=True)
+    reconciliation_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+    payment = relationship("Payment")
+    seller = relationship("User")
 
 
 class RiskAssessment(Base):

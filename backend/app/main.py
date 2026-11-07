@@ -13,7 +13,7 @@ from app.config import settings
 from app.db.seed import reset_demo_data, seed_demo_data
 from app.db.session import SessionLocal, get_db
 from app.db.migrate import initialize_database
-from app.routes import admin, analytics, auth, carriers, copilot, notifications, payments, quotes, shipments, tracking
+from app.routes import admin, analytics, auth, carriers, copilot, notifications, payments, quotes, shipments, tracking, seller_verification, marketplace, documents, calculator
 
 
 @asynccontextmanager
@@ -92,6 +92,10 @@ app.include_router(analytics.router)
 app.include_router(notifications.router)
 app.include_router(admin.router)
 app.include_router(carriers.router)
+app.include_router(seller_verification.router)
+app.include_router(marketplace.router)
+app.include_router(documents.router)
+app.include_router(calculator.router)
 
 
 @app.get("/health", tags=["System"])

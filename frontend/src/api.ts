@@ -70,6 +70,34 @@ export const compareQuotesWithCopilot = (shipmentId: string, quoteIds: string[])
 export const fetchCopilotHistory = (shipmentId?: string) => request<Array<{ id: string; shipment_id: string; task: string; input: unknown; response: CopilotResult; created_at: string }>>(`/api/copilot/history${shipmentId ? `?shipment_id=${encodeURIComponent(shipmentId)}` : ''}`);
 export const login = (email: string, password: string) => request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
 export const register = (email: string, password: string) => request<AuthResponse>('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) });
+export const registerBuyer = (payload: { email: string; password: string; company_name?: string; contact_person?: string; phone_number?: string }) =>
+  request<AuthResponse>('/api/auth/register/buyer', { method: 'POST', body: JSON.stringify(payload) });
+export const registerSeller = (payload: { email: string; password: string; business_name: string; business_address: string; country: string; contact_person: string; contact_phone: string; registration_number?: string }) =>
+  request<AuthResponse>('/api/auth/register/seller', { method: 'POST', body: JSON.stringify(payload) });
+
+export const sendEmailVerification = () => request<{ code: string; message: string; verification_token?: string }>('/api/auth/send-email-verification', { method: 'POST', body: JSON.stringify({}) });
+export const verifyEmail = (token: string) => request<{ code: string; message: string }>('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) });
+export const sendPhoneVerification = (phoneNumber: string) => request<{ code: string; message: string; otp?: string }>('/api/auth/send-phone-verification', { method: 'POST', body: JSON.stringify({ phone_number: phoneNumber }) });
+export const verifyPhone = (phoneNumber: string, otp: string) => request<{ code: string; message: string }>('/api/auth/verify-phone', { method: 'POST', body: JSON.stringify({ phone_number: phoneNumber, otp }) });
+
+export const editQuotePrice = (quoteId: string, payload: { base_amount: number; surcharge_amount: number; currency: string; revision_reason: string }) =>
+  request<{ message: string; quote_id: string; revision_number: number; revised_amount: number }>(`/api/marketplace/quotes/${encodeURIComponent(quoteId)}/price`, { method: 'PUT', body: JSON.stringify(payload) });
+export const fetchQuotePriceHistory = (quoteId: string) => request<any[]>(`/api/marketplace/quotes/${encodeURIComponent(quoteId)}/price-history`);
+
+export const createCounterOffer = (quoteId: string, payload: { counter_amount: number; currency: string; notes?: string }) =>
+  request<any>(`/api/marketplace/quotes/${encodeURIComponent(quoteId)}/counter-offer`, { method: 'POST', body: JSON.stringify(payload) });
+export const respondCounterOffer = (counterId: string, decision: 'ACCEPT' | 'REJECT', responseNotes?: string) =>
+  request<any>(`/api/marketplace/counter-offers/${encodeURIComponent(counterId)}/respond`, { method: 'POST', body: JSON.stringify({ decision, response_notes: responseNotes }) });
+export const fetchCounterOffers = (quoteId: string) => request<any[]>(`/api/marketplace/quotes/${encodeURIComponent(quoteId)}/counter-offers`);
+
+export const fetchSettlements = () => request<any[]>('/api/settlements');
+
+export const calculateFreightEstimate = (payload: { cargo_type: string; quantity_tonnes: number; distance_km: number; transport_mode: string; currency: string }) =>
+  request<any>('/api/calculator/estimate', { method: 'POST', body: JSON.stringify(payload) });
+
+export const sendAiSupportChat = (message: string, shipmentId?: string, roleContext?: string) =>
+  request<{ reply: string; disclaimer: string }>('/api/copilot/chat', { method: 'POST', body: JSON.stringify({ message, shipment_id: shipmentId, role_context: roleContext }) });
+
 export const fetchCurrentUser = () => request<UserProfile>('/api/auth/me');
 export const resetDemoData = () => request<{ status: string; shipment_id: string }>('/api/demo/reset', { method: 'POST' });
 
