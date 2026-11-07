@@ -176,6 +176,64 @@ export interface UserProfile {
   email: string;
   role: string;
   is_active: boolean;
+  email_verified?: boolean;
+  phone_verified?: boolean;
+}
+
+export interface QuotePriceRevisionItem {
+  revision_number: number;
+  previous_amount: number;
+  revised_amount: number;
+  currency: string;
+  fee_breakdown: { base: number; surcharges: number };
+  reason: string;
+  created_at: string;
+}
+
+export interface CounterOfferItem {
+  id: string;
+  original_amount: number;
+  counter_amount: number;
+  currency: string;
+  status: string;
+  notes?: string | null;
+  seller_response?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+}
+
+export interface SettlementRecord {
+  id: string;
+  payment_id: string;
+  seller_id: string;
+  buyer_payment: number;
+  platform_fee: number;
+  applicable_taxes: number;
+  seller_payable: number;
+  currency: string;
+  status: string;
+  payout_reference?: string | null;
+  created_at: string;
+}
+
+export interface CalculatorResult {
+  estimated_freight_cost: number;
+  currency: string;
+  range: {
+    min_estimate: number;
+    max_estimate: number;
+    confidence_level: string;
+  };
+  breakdown: {
+    base_freight: number;
+    fuel_surcharge: number;
+    port_terminal_handling: number;
+    cargo_insurance: number;
+    express_handling: number;
+    applicable_taxes: number;
+  };
+  assumptions: string[];
+  disclaimer: string;
 }
 
 export interface AuthResponse {

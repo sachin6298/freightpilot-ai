@@ -101,3 +101,69 @@ def require_shipment_access(shipment, user: User | None) -> None:
     raise HTTPException(status_code=404, detail={
         "code": "SHIPMENT_NOT_FOUND", "message": "Shipment not found.",
     })
+
+
+# Role-based authorization
+def require_buyer(user: User = Depends(get_current_user)) -> User:
+    """Require the current user to be a buyer."""
+    if user.role != "BUYER":
+        raise HTTPException(status_code=403, detail={
+            "code": "NOT_A_BUYER",
+            "message": "This action requires a buyer account.",
+        })
+    return user
+
+
+def require_seller(user: User = Depends(get_current_user)) -> User:
+    """Require the current user to be a seller."""
+    if user.role != "SELLER":
+        raise HTTPException(status_code=403, detail={
+            "code": "NOT_A_SELLER",
+            "message": "This action requires a seller account.",
+        })
+    return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Require the current user to be an admin."""
+    if user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail={
+            "code": "NOT_AN_ADMIN",
+            "message": "This action requires an admin account.",
+        })
+    return user
+
+
+def require_verified_email(user: User = Depends(get_current_user)) -> User:
+    """Require the current user to have verified their email."""
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail={
+            "code": "EMAIL_NOT_VERIFIED",
+            "message": "Please verify your email address before accessing this resource.",
+        })
+    return user
+
+
+def require_verified_phone(user: User = Depends(get_current_user)) -> User:
+    """Require the current user to have verified their phone."""
+    if not user.phone_verified:
+        raise HTTPException(status_code=403, detail={
+            "code": "PHONE_NOT_VERIFIED",
+            "message": "Please verify your phone number before accessing this resource.",
+        })
+    return user
+
+
+def require_full_verification(user: User = Depends(get_current_user)) -> User:
+    """Require the current user to have verified both email and phone."""
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail={
+            "code": "EMAIL_NOT_VERIFIED",
+            "message": "Please verify your email address.",
+        })
+    if not user.phone_verified:
+        raise HTTPException(status_code=403, detail={
+            "code": "PHONE_NOT_VERIFIED",
+            "message": "Please verify your phone number.",
+        })
+    return user

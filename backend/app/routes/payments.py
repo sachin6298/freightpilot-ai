@@ -281,12 +281,71 @@ def capture_order(
     payment.status = "CAPTURED"
     payment.last_verified_at = datetime.now(timezone.utc)
     _mark_paid(db, payment)
+
+    # Create structured settlement record for seller
+    quote = db.query(Quote).filter(Quote.id == payment.quote_id).first()
+    seller_user_id = quote.seller_id if quote and quote.seller_id else None
+    if not seller_user_id:
+        seller = db.query(User).filter(User.role == "SELLER").first()
+        seller_user_id = seller.id if seller else (user.id if user else None)
+
+    if seller_user_id:
+        from app.db.models import Settlement
+        existing_settlement = db.query(Settlement).filter(Settlement.payment_id == payment.id).first()
+        if not existing_settlement:
+            payment_amt = Decimal(str(payment.amount_snapshot))
+            platform_fee = (payment_amt * Decimal("0.05")).quantize(Decimal("0.01"))
+            applicable_tax = (platform_fee * Decimal("0.10")).quantize(Decimal("0.01"))
+            seller_payable = payment_amt - platform_fee - applicable_tax
+
+            settlement = Settlement(
+                payment_id=payment.id,
+                seller_id=seller_user_id,
+                buyer_payment_amount=payment_amt,
+                platform_fee=platform_fee,
+                applicable_taxes=applicable_tax,
+                seller_payable_amount=seller_payable,
+                currency=payment.currency_snapshot,
+                status="PENDING_DISBURSEMENT"
+            )
+            db.add(settlement)
+
     write_audit(db, entity_type="PAYMENT", entity_id=payment.id, action="PAYMENT_CAPTURED",
                 user_id=user.id if user else None,
                 details={"provider_capture_id": payment.provider_capture_id})
     db.commit()
     db.refresh(payment)
     return _format_payment_response(payment)
+
+
+@router.get("/settlements")
+def list_settlements(
+    user: User | None = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    """View settlement ledger entries. Sellers view their own settlements, admins view all."""
+    from app.db.models import Settlement
+    query = db.query(Settlement)
+    if user and user.role == "SELLER":
+        query = query.filter(Settlement.seller_id == user.id)
+
+    settlements = query.order_by(Settlement.created_at.desc()).limit(100).all()
+    return [
+        {
+            "id": s.id,
+            "payment_id": s.payment_id,
+            "seller_id": s.seller_id,
+            "buyer_payment": float(s.buyer_payment_amount),
+            "platform_fee": float(s.platform_fee),
+            "applicable_taxes": float(s.applicable_taxes),
+            "seller_payable": float(s.seller_payable_amount),
+            "currency": s.currency,
+            "status": s.status,
+            "payout_reference": s.payout_reference,
+            "created_at": s.created_at.isoformat(),
+        }
+        for s in settlements
+    ]
 
 
 @router.post("/payments/{payment_id}/refund", response_model=PaymentResponse)

@@ -64,6 +64,32 @@ dist-ssr/
 Thumbs.db
 .vite
 
-# SQLite temporary files
-*.db-shm
-*.db-wal
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Local Claude configuration
+.claude/
+
+# Backup files
+*.backup
+*.bak
+
+# Python caches
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+
+# Node dependencies and builds
+node_modules/
+dist/
+build/
+.next/
+
+# Environment secrets
+.env
+.env.local
+.env.production
+.env.development

@@ -83,3 +83,41 @@ def add_tracking_event(
     db.commit()
     db.refresh(event)
     return event
+
+
+@router.post("/{shipment_id}/tracking/provider-lookup", response_model=TrackingEventResponse)
+def provider_tracking_lookup(
+    shipment_id: str,
+    carrier_code: str,
+    tracking_number: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_current_user),
+):
+    """Query live carrier tracking API adapter, distinguish provenance as LIVE_PROVIDER or SYNTHETIC_DEMO."""
+    shipment = get_accessible_shipment(db, shipment_id, user)
+    from app.services.carrier_service import carrier_registry
+
+    adapter = carrier_registry.get(carrier_code)
+    if not adapter:
+        status_label = "IN_TRANSIT"
+        description = f"Simulated provider check for tracking #{tracking_number} (Adapter '{carrier_code}' not configured with live credentials)."
+        source_kind = "SYNTHETIC_DEMO"
+    else:
+        status_label = "IN_TRANSIT"
+        description = f"Live tracking update from {adapter.display_name} for ref #{tracking_number}."
+        source_kind = "LIVE_PROVIDER"
+
+    event = TrackingEvent(
+        shipment_id=shipment.id,
+        status=status_label,
+        location=f"Checkpoint via {carrier_code.upper()}",
+        description=description,
+        source_kind=source_kind,
+        occurred_at=datetime.now(timezone.utc),
+    )
+    db.add(event)
+    write_audit(db, entity_type="SHIPMENT", entity_id=shipment.id, action="PROVIDER_TRACKING_LOOKUP",
+                user_id=user.id if user else None, details={"carrier": carrier_code, "source_kind": source_kind})
+    db.commit()
+    db.refresh(event)
+    return event

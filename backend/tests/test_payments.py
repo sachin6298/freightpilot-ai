@@ -3,7 +3,7 @@
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
-from app.db.models import Base
+from app.db.models import Base, Payment
 from app.db.seed import seed_demo_data
 from app.db.session import SessionLocal, engine
 from app.main import app
@@ -12,9 +12,11 @@ client = TestClient(app)
 
 
 def setup_module():
-    """Ensure database tables exist and demo data is seeded."""
+    """Ensure database tables exist, clear old payments, and demo data is seeded."""
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
+        db.query(Payment).delete()
+        db.commit()
         seed_demo_data(db)
 
 
