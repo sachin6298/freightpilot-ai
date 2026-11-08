@@ -36,80 +36,10 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  background: linear-gradient(135deg, #0b1329 0%, #14213D 50%, #1e3a8a 100%);
+  background: #14213D;
   color: #F4EDE0;
   overflow: hidden;
   padding: 30px 50px;
-}
-.ocean-background {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-}
-.ocean-water {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 200%;
-  height: 45vh;
-  background: linear-gradient(180deg, rgba(20,33,61,0.2) 0%, rgba(10,25,47,0.85) 100%),
-              radial-gradient(ellipse at center, rgba(30,58,138,0.4) 0%, transparent 70%);
-  animation: waveMotion 12s ease-in-out infinite alternate;
-}
-.ocean-wave-layer-1 {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 200%;
-  height: 35vh;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,0 C150,90 350,-40 500,40 C650,120 900,10 1200,50 L1200,120 L0,120 Z' fill='%2314213D' fill-opacity='0.7'/%3E%3C/svg%3E") repeat-x;
-  background-size: 1200px 100%;
-  animation: waveScroll 8s linear infinite;
-}
-.ocean-wave-layer-2 {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 200%;
-  height: 25vh;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,30 C200,110 400,0 600,50 C800,100 1000,20 1200,60 L1200,120 L0,120 Z' fill='%230b1329' fill-opacity='0.9'/%3E%3C/svg%3E") repeat-x;
-  background-size: 1200px 100%;
-  animation: waveScrollFast 5s linear infinite;
-}
-.moving-ship-container {
-  position: absolute;
-  bottom: 22vh;
-  left: -200px;
-  z-index: 2;
-  animation: shipNavigate 24s linear infinite;
-  filter: drop-shadow(0 15px 25px rgba(0,0,0,0.5));
-}
-.moving-ship {
-  width: 280px;
-  height: auto;
-  animation: shipBobbing 3s ease-in-out infinite alternate;
-}
-@keyframes waveScroll {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-@keyframes waveScrollFast {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-@keyframes waveMotion {
-  0% { transform: translateY(0) scale(1); }
-  100% { transform: translateY(-15px) scale(1.02); }
-}
-@keyframes shipNavigate {
-  0% { transform: translateX(0) translateY(0); }
-  50% { transform: translateX(calc(50vw + 100px)) translateY(-8px); }
-  100% { transform: translateX(calc(100vw + 300px)) translateY(0); }
-}
-@keyframes shipBobbing {
-  0% { transform: rotate(-1.5deg) translateY(0); }
-  100% { transform: rotate(1.5deg) translateY(-10px); }
 }
 
 .landing-nav {
