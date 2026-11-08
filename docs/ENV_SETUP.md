@@ -1,57 +1,77 @@
 # Environment Variables and Local Setup
 
-## Backend `.env` (never commit this file)
-Use a backend-only `.env` file based on these placeholders:
+The archive includes safe placeholder files at `backend/.env` and `frontend/.env.local`. Edit these files locally. Never commit populated environment files.
+
+## Backend `.env` (server-only)
+
 ```dotenv
 APP_ENV=development
 DEMO_MODE=true
 DATABASE_URL=sqlite:///./freightpilot.db
 FRONTEND_ORIGIN=http://localhost:5173
+API_PUBLIC_URL=http://localhost:8000
+
+GOOGLE_CLIENT_ID=
+APPLE_CLIENT_ID=
+APPLE_TEAM_ID=
+APPLE_KEY_ID=
+# Apple .p8 private-key contents; use escaped \\n line breaks when stored on one line.
+APPLE_PRIVATE_KEY=
+APPLE_REDIRECT_URI=
 
 PAYPAL_ENV=sandbox
-PAYPAL_CLIENT_ID=replace_with_sandbox_client_id
-PAYPAL_CLIENT_SECRET=replace_with_sandbox_client_secret
-PAYPAL_WEBHOOK_ID=replace_when_webhook_is_configured
+PAYPAL_CLIENT_ID=
+PAYPAL_CLIENT_SECRET=
+PAYPAL_WEBHOOK_ID=
 
-AI_PROVIDER=replace_with_selected_provider
-AI_API_KEY=replace_with_your_ai_provider_key
-AI_MODEL=replace_with_supported_model
+SMS_PROVIDER=console
+EMAIL_PROVIDER=console
+AI_PROVIDER=gemini
+AI_API_KEY=
+AI_MODEL=gemini-2.5-flash
 ```
 
-Do not place real keys in this documentation, source code, screenshots, public issue threads, or Vite variables. Vite exposes variables prefixed with `VITE_` to browser code. Only a PayPal client identifier intended for browser use may be exposed, never the secret.
+Google and Apple client IDs must match the corresponding browser values. Apple also requires its Team ID, Key ID, `.p8` private key and exact registered HTTPS Return URL. The Apple private key, PayPal Secret, Twilio credentials, AI API key, database credentials and JWT signing key are server-only.
 
-## Frontend `.env.local`
+## Frontend `.env.local` (browser-safe values only)
+
 ```dotenv
 VITE_API_BASE_URL=http://localhost:8000
-VITE_PAYPAL_CLIENT_ID=replace_with_sandbox_client_id
+VITE_PAYPAL_CLIENT_ID=
+VITE_GOOGLE_CLIENT_ID=
+VITE_APPLE_CLIENT_ID=
+VITE_APPLE_REDIRECT_URI=
 ```
 
-Only expose values that are safe for the browser. Do not put `PAYPAL_CLIENT_SECRET` or `AI_API_KEY` in the frontend file.
+Only public client identifiers belong in Vite variables. Do not put a provider secret, Apple `.p8` private key, Twilio key, database URL or JWT secret in the frontend. Apple web sign-in requires a registered HTTPS Return URL; localhost is not accepted.
 
 ## Installation outline
+
 ### Backend
-```bash
+
+```powershell
 cd backend
-python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-# Linux/macOS: source .venv/bin/activate
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
 ### Frontend
-```bash
+
+```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-### Verification
-- Open API health route and FastAPI `/docs`.
-- Confirm CORS is restricted to the intended local frontend origin.
-- Confirm the app starts with `DEMO_MODE=true` even if AI/PayPal keys are absent; payment controls should clearly say configuration is missing rather than silently pretend to pay.
-- Test AI fallback without an API key.
-- Use only PayPal Sandbox credentials for this hackathon prototype.
+### Tests and migrations
 
-Exact setup commands depend on the generated project files. Keep `.env.example` updated as real variables are added, but leave values as placeholders.
+```powershell
+pip install -r requirements-dev.txt
+pytest -q
+alembic upgrade head
+```
+
+For full provider setup, see `docs/PROVIDER_CREDENTIALS.md` and `docs/DEPLOYMENT_ENV_CHECKLIST.md`.

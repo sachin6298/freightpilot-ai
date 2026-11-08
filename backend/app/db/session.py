@@ -16,8 +16,12 @@ def create_database_engine() -> create_engine:
         "future": True,
     }
 
-    if settings.DATABASE_URL.startswith("postgresql"):
-        # PostgreSQL-specific configuration using settings
+    if settings.DATABASE_URL.startswith(("postgresql://", "postgres://", "postgresql+psycopg://")):
+        # Explicitly select psycopg 3 rather than SQLAlchemy's psycopg2 default.
+        database_url = settings.DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+        if database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        engine_options["connect_args"] = {"connect_timeout": 10, "options": "-c timezone=UTC"}
         engine_options.update({
             "poolclass": QueuePool,
             "pool_size": settings.DB_POOL_SIZE,
@@ -25,7 +29,6 @@ def create_database_engine() -> create_engine:
             "pool_timeout": settings.DB_POOL_TIMEOUT,
             "pool_recycle": settings.DB_POOL_RECYCLE,
         })
-        connect_args = {}
     elif settings.DATABASE_URL.startswith("sqlite"):
         # SQLite-specific configuration for development
         connect_args = {"check_same_thread": False}
@@ -33,7 +36,8 @@ def create_database_engine() -> create_engine:
     else:
         connect_args = {}
 
-    engine = create_engine(settings.DATABASE_URL, **engine_options)
+    database_url = locals().get("database_url", settings.DATABASE_URL)
+    engine = create_engine(database_url, **engine_options)
 
     # Database-specific event listeners
     if settings.DATABASE_URL.startswith("sqlite"):
@@ -45,7 +49,7 @@ def create_database_engine() -> create_engine:
             cursor.execute("PRAGMA busy_timeout=5000")
             cursor.close()
 
-    elif settings.DATABASE_URL.startswith("postgresql"):
+    elif settings.DATABASE_URL.startswith(("postgresql://", "postgres://", "postgresql+psycopg://")):
         @event.listens_for(engine, "first_connect")
         def _configure_postgresql(connection, _record) -> None:
             # Ensure proper timezone handling

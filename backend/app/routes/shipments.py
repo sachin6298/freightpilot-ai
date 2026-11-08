@@ -79,6 +79,10 @@ def create_shipment(
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
 ) -> ShipmentResponse:
+    if settings.is_production and (user is None or user.role != "BUYER"):
+        raise HTTPException(status_code=403, detail={"code": "BUYER_REQUIRED", "message": "Only authenticated buyer accounts can create shipments."})
+    if settings.is_production and user is not None and (not user.email_verified or not user.phone_verified):
+        raise HTTPException(status_code=403, detail={"code": "BUYER_VERIFICATION_REQUIRED", "message": "Verify your email and phone before creating shipments."})
     shipment = Shipment(
         user_id=user.id if user else None,
         cargo_type=payload.cargo_type.strip(), quantity_tonnes=payload.quantity_tonnes,
@@ -114,6 +118,8 @@ def update_shipment(
     shipment_id: str, payload: ShipmentUpdate, db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
 ) -> ShipmentResponse:
+    if settings.is_production and (user is None or user.role != "BUYER"):
+        raise HTTPException(status_code=403, detail={"code": "BUYER_REQUIRED", "message": "Only the owning buyer can edit this shipment."})
     shipment = get_accessible_shipment(db, shipment_id, user)
     if shipment.status not in {"DRAFT", "QUOTED"}:
         raise HTTPException(status_code=409, detail={
@@ -146,7 +152,11 @@ def cancel_shipment(
     shipment_id: str, db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
 ) -> ShipmentResponse:
+    if settings.is_production and (user is None or user.role != "BUYER"):
+        raise HTTPException(status_code=403, detail={"code": "BUYER_REQUIRED", "message": "Only the owning buyer can cancel this shipment."})
     shipment = get_accessible_shipment(db, shipment_id, user)
+    if user is not None and shipment.user_id != user.id:
+        raise HTTPException(status_code=404, detail={"code": "SHIPMENT_NOT_FOUND", "message": "Shipment not found."})
     from app.services.shipment_service import transition_shipment
     transition_shipment(shipment, "CANCELLED")
     event = TrackingEvent(
@@ -213,6 +223,8 @@ def create_shipment_quote(
     shipment_id: str, payload: QuoteCreate, db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
 ) -> QuoteResponse:
+    if settings.is_production and (user is None or user.role != "ADMIN"):
+        raise HTTPException(status_code=403, detail={"code": "ADMIN_REQUIRED", "message": "Manual quote insertion is restricted to administrators. Sellers must use the marketplace quoting workflow."})
     shipment = get_accessible_shipment(db, shipment_id, user)
     if payload.currency != shipment.currency:
         raise HTTPException(status_code=400, detail={

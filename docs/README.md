@@ -87,3 +87,5 @@ The MVP does not move real freight, verify a real carrier's legal identity, prov
 - [ ] Devpost description includes what was built, tools used, and a working demo/repository.
 
 The official submission deadline is listed by Devpost; re-check the [official rules](https://paypalaihackathon.devpost.com/rules) before submitting.
+
+- [Provider credentials and API keys](PROVIDER_CREDENTIALS.md)

@@ -13,4 +13,4 @@ def test_health_check_returns_ok():
     data = response.json()
     assert data["status"] == "ok"
     assert data["app"] == "freightpilot-ai"
-    assert data["mode"] == "sandbox"
+    assert set(data) == {"status", "app"}

@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.access import get_accessible_shipment
 from app.core.audit import create_notification, write_audit
-from app.core.security import get_optional_current_user
+from app.core.security import get_optional_current_user, get_current_user
+from app.config import settings
 from app.db.models import TrackingEvent, User
 from app.db.session import get_db
 from app.services.shipment_service import transition_shipment
@@ -57,9 +58,11 @@ def list_tracking_events(
 @router.post("/{shipment_id}/tracking", response_model=TrackingEventResponse, status_code=status.HTTP_201_CREATED)
 def add_tracking_event(
     shipment_id: str, payload: TrackingEventCreate,
-    db: Session = Depends(get_db), user: User | None = Depends(get_optional_current_user),
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
     shipment = get_accessible_shipment(db, shipment_id, user)
+    if user.role != "ADMIN" and not (settings.DEMO_MODE and user.role == "BUYER" and shipment.user_id == user.id):
+        raise HTTPException(status_code=403, detail={"code": "TRACKING_UPDATE_FORBIDDEN", "message": "Only authorized operations personnel can update shipment status."})
     target = payload.status.upper().strip()
     if target not in _ALLOWED_STATUSES:
         raise HTTPException(status_code=422, detail={"code": "INVALID_TRACKING_STATUS", "message": "Unsupported shipment status."})
@@ -67,7 +70,8 @@ def add_tracking_event(
     occurred_at = payload.occurred_at or datetime.now(timezone.utc)
     event = TrackingEvent(
         shipment_id=shipment.id, status=target, location=payload.location,
-        description=payload.description.strip(), source_kind=payload.source_kind,
+        description=payload.description.strip(),
+        source_kind="ADMIN_MANUAL" if user.role == "ADMIN" else "DEMO_MANUAL",
         occurred_at=occurred_at,
     )
     db.add(event)
@@ -91,26 +95,26 @@ def provider_tracking_lookup(
     carrier_code: str,
     tracking_number: str,
     db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """Query live carrier tracking API adapter, distinguish provenance as LIVE_PROVIDER or SYNTHETIC_DEMO."""
+    """Fetch verified tracking information from a configured carrier adapter."""
     shipment = get_accessible_shipment(db, shipment_id, user)
     from app.services.carrier_service import carrier_registry
 
     adapter = carrier_registry.get(carrier_code)
-    if not adapter:
-        status_label = "IN_TRANSIT"
-        description = f"Simulated provider check for tracking #{tracking_number} (Adapter '{carrier_code}' not configured with live credentials)."
-        source_kind = "SYNTHETIC_DEMO"
-    else:
-        status_label = "IN_TRANSIT"
-        description = f"Live tracking update from {adapter.display_name} for ref #{tracking_number}."
-        source_kind = "LIVE_PROVIDER"
+    if not adapter or not hasattr(adapter, "fetch_tracking"):
+        raise HTTPException(status_code=501, detail={"code": "CARRIER_TRACKING_NOT_CONFIGURED", "message": "No verified live tracking adapter is configured for this carrier."})
+    result = adapter.fetch_tracking(tracking_number)
+    status_label = str(result.get("status", "")).upper()
+    if status_label not in _ALLOWED_STATUSES:
+        raise HTTPException(status_code=502, detail={"code": "CARRIER_TRACKING_INVALID", "message": "Carrier returned an unsupported tracking status."})
+    description = str(result.get("description", "Carrier update"))[:2000]
+    source_kind = "LIVE_PROVIDER"
 
     event = TrackingEvent(
         shipment_id=shipment.id,
         status=status_label,
-        location=f"Checkpoint via {carrier_code.upper()}",
+        location=str(result.get("location", ""))[:200] or None,
         description=description,
         source_kind=source_kind,
         occurred_at=datetime.now(timezone.utc),

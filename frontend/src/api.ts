@@ -103,3 +103,48 @@ export const resetDemoData = () => request<{ status: string; shipment_id: string
 
 export const apiBaseUrl = API_BASE_URL;
 export const paypalClientId = import.meta.env.VITE_PAYPAL_CLIENT_ID || '';
+
+
+export const oauthSignIn = (
+  provider: 'google' | 'apple',
+  idToken: string,
+  nonce: string,
+  authorizationCode?: string,
+) =>
+  request<AuthResponse>(`/api/auth/oauth/${provider}`, {
+    method: 'POST',
+    body: JSON.stringify(provider === 'apple'
+      ? { authorization_code: authorizationCode, nonce }
+      : { id_token: idToken, nonce }),
+  });
+
+export const requestPhoneLoginOtp = (phoneNumber: string) =>
+  request<{ code: string; message: string }>('/api/auth/phone/request', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number: phoneNumber }),
+  });
+
+export const verifyPhoneLoginOtp = (phoneNumber: string, otp: string) =>
+  request<AuthResponse>('/api/auth/phone/verify', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number: phoneNumber, otp }),
+  });
+
+
+export const updateAccountPhone = (phoneNumber: string) =>
+  request<UserProfile>('/api/auth/me/phone', {
+    method: 'PUT',
+    body: JSON.stringify({ phone_number: phoneNumber }),
+  });
+
+export const sendAccountPhoneVerification = (phoneNumber: string) =>
+  request<{ code: string; message: string }>('/api/auth/send-phone-verification', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number: phoneNumber }),
+  });
+
+export const verifyAccountPhone = (phoneNumber: string, otp: string) =>
+  request<{ code: string; message: string }>('/api/auth/verify-phone', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number: phoneNumber, otp }),
+  });

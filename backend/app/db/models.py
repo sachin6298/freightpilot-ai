@@ -37,6 +37,24 @@ class User(Base):
     phone_verifications = relationship("PhoneVerification", back_populates="user", cascade="all, delete-orphan")
 
 
+class OAuthIdentity(Base):
+    """Verified external identity linked to one FreightPilot account."""
+
+    __tablename__ = "oauth_identities"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String(20), nullable=False)
+    subject = Column(String(255), nullable=False)
+    email = Column(String(254), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "subject", name="uq_oauth_identity_provider_subject"),
+    )
+
+
+
 class BuyerProfile(Base):
     __tablename__ = "buyer_profiles"
 
@@ -114,8 +132,7 @@ class EmailVerification(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     email = Column(String(254), nullable=False)
-    token = Column(String(100), nullable=False)
-    token_hash = Column(String(255), nullable=False, unique=True, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     verified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
@@ -302,6 +319,24 @@ class WebhookEvent(Base):
     payload_hash = Column(String(64), nullable=True)
     received_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     processed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class StoredDocument(Base):
+    """Private file metadata; document bytes live outside the public web root."""
+    __tablename__ = "stored_documents"
+    __table_args__ = (Index("ix_documents_owner_created", "owner_id", "created_at"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    shipment_id = Column(String(36), ForeignKey("shipments.id", ondelete="CASCADE"), nullable=True, index=True)
+    storage_key = Column(String(100), nullable=False, unique=True)
+    original_filename = Column(String(255), nullable=False)
+    document_type = Column(String(60), nullable=False)
+    mime_type = Column(String(100), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    scan_status = Column(String(30), nullable=False, default="NOT_SCANNED")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
 class TrackingEvent(Base):

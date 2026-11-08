@@ -3,7 +3,7 @@
 import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -38,8 +38,6 @@ class EmailVerificationService:
         expires_minutes: int = 24 * 60
     ) -> EmailVerification:
         """Create an email verification record."""
-        from typing import Tuple
-
         # Delete any existing verifications
         self.db.query(EmailVerification).filter(
             EmailVerification.user_id == user.id,
@@ -51,7 +49,6 @@ class EmailVerificationService:
         verification = EmailVerification(
             user_id=user.id,
             email=email,
-            token=token,
             token_hash=token_hash,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=expires_minutes),
         )
@@ -64,7 +61,7 @@ class EmailVerificationService:
     def verify_email_token(self, token: str) -> Optional[EmailVerification]:
         """Verify an email token and return the verification record."""
         verification = self.db.query(EmailVerification).filter(
-            EmailVerification.token == token,
+            EmailVerification.token_hash == self._hash_token(token),
             EmailVerification.verified_at.is_(None),
         ).first()
 
@@ -151,8 +148,6 @@ class PhoneVerificationService:
         expires_minutes: int = 10
     ) -> Tuple[PhoneVerification, str]:
         """Create a phone verification record."""
-        from typing import Tuple
-
         # Delete any existing verifications
         self.db.query(PhoneVerification).filter(
             PhoneVerification.user_id == user.id,

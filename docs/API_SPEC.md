@@ -84,3 +84,42 @@ Use appropriate 4xx codes for client errors and 5xx for server errors. Never inc
 - Internal payment attempt and provider order ID match.
 - Provider status/amount/currency are validated before marking captured.
 - Repeated requests do not create duplicate charges/orders unexpectedly.
+
+
+## Authentication provider endpoints (implemented)
+
+All routes below are mounted under `/api/auth`.
+
+### `POST /api/auth/oauth/google`
+Request:
+```json
+{"id_token":"<Google GIS credential JWT>","nonce":"<one-time frontend nonce>"}
+```
+The API validates the provider signature, issuer, audience, expiry and nonce against Google's published signing keys. It creates or links a buyer account only after the provider email is verified.
+
+### `POST /api/auth/oauth/apple`
+Request:
+```json
+{"authorization_code":"<one-time Apple authorization code>","nonce":"<one-time frontend nonce>"}
+```
+The API exchanges the one-time code with Apple using a short-lived ES256 client secret signed by the server-only Apple `.p8` key, then validates the returned ID token's signature, issuer, audience, expiry and nonce.
+
+### `PUT /api/auth/me/phone`
+Requires an access token. Sets or replaces an unverified account phone number in E.164 format. A verified phone number cannot be changed through this route. Response includes the current user and phone verification state.
+
+### `POST /api/auth/phone/request`
+Request:
+```json
+{"phone_number":"+919876543210"}
+```
+Requests an SMS login code for an existing account. The response does not disclose whether the phone number belongs to an account.
+
+### `POST /api/auth/phone/verify`
+Request:
+```json
+{"phone_number":"+919876543210","otp":"123456"}
+```
+Verifies the SMS code and returns a normal access-token response. Codes expire after 10 minutes and are limited to five attempts.
+
+### Authenticated phone verification
+`POST /api/auth/send-phone-verification` sends a code to the current account's registered phone number; `POST /api/auth/verify-phone` confirms it. Both require an access token.
