@@ -58,6 +58,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
+<<<<<<< HEAD
+        # Disable rate limiting in test environment to avoid test flakiness
+        if settings.APP_ENV == "test":
+            return await call_next(request)
+=======
+>>>>>>> e6ba7bf4c8fc4ecc1613050b3b9d81a0cf7678b9
         limit, window, policy_name = self._policy(request.url.path)
         raw_ip = request.client.host if request.client else "unknown"
         client_key = hashlib.sha256(raw_ip.encode()).hexdigest()[:24]

@@ -125,8 +125,21 @@ app.include_router(calculator.router)
 
 @app.get("/health", tags=["System"])
 def health_check() -> dict[str, str]:
+<<<<<<< HEAD
+    """Liveness probe for UptimeRobot and load balancers.
+    Returns minimal info - no infrastructure details disclosed.
+    """
+    return {"status": "healthy", "service": "FreightPilot AI Backend"}
+
+
+@app.get("/", tags=["System"])
+def root() -> dict[str, str]:
+    """Root endpoint for basic connectivity check."""
+    return {"service": "FreightPilot AI Backend", "status": "running", "version": "1.0.0"}
+=======
     """Liveness probe; does not disclose infrastructure details."""
     return {"status": "ok", "app": "freightpilot-ai"}
+>>>>>>> e6ba7bf4c8fc4ecc1613050b3b9d81a0cf7678b9
 
 
 @app.get("/health/ready", tags=["System"])

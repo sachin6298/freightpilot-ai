@@ -21,8 +21,13 @@ def test_health_check():
     res = client.get("/health")
     assert res.status_code == 200
     data = res.json()
+<<<<<<< HEAD
+    assert data["status"] == "healthy"
+    assert data["service"] == "FreightPilot AI Backend"
+=======
     assert data["status"] == "ok"
     assert data["app"] == "freightpilot-ai"
+>>>>>>> e6ba7bf4c8fc4ecc1613050b3b9d81a0cf7678b9
 
 
 def test_freight_cost_calculator():

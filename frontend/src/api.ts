@@ -47,7 +47,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export const fetchHealth = () => request<{ status: string; app: string; mode: string; database: string }>('/health');
+export const fetchHealth = () => request<{ status: string; service: string }>('/health');
 export const fetchShipments = () => request<Shipment[]>('/api/shipments?limit=100');
 export const fetchShipment = (id: string) => request<Shipment>(`/api/shipments/${encodeURIComponent(id)}`);
 export const createShipment = (payload: ShipmentCreatePayload) => request<Shipment>('/api/shipments', { method: 'POST', body: JSON.stringify(payload) });
