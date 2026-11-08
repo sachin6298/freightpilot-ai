@@ -125,7 +125,7 @@ function createAuthNonce(): string {
 }
 
 function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void }): React.ReactElement {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [method, setMethod] = useState<'password' | 'phone'>('password');
   const [role, setRole] = useState<'BUYER' | 'SELLER'>('BUYER');
   const [email, setEmail] = useState('');
@@ -139,6 +139,7 @@ function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthen
   const [otpRequested, setOtpRequested] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [nonce] = useState(createAuthNonce);
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const onAuthenticatedRef = useRef(onAuthenticated);
@@ -324,14 +325,35 @@ function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthen
         <button className="auth-close-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={16}/></button>
 
         <div className="auth-toggle-pill">
-          <button className={mode === 'login' ? 'active' : ''} type="button" onClick={() => { setMode('login'); setMethod('password'); setError(null); setOtpRequested(false); }}>Sign In</button>
-          <button className={mode === 'register' ? 'active' : ''} type="button" onClick={() => { setMode('register'); setMethod('password'); setError(null); }}>Create Account</button>
+          <button className={mode === 'login' ? 'active' : ''} type="button" onClick={() => { setMode('login'); setMethod('password'); setError(null); setSuccessMsg(null); setOtpRequested(false); }}>Sign In</button>
+          <button className={mode === 'register' ? 'active' : ''} type="button" onClick={() => { setMode('register'); setMethod('password'); setError(null); setSuccessMsg(null); }}>Create Account</button>
         </div>
 
         <div className="auth-right-head">
-          <h3>{mode === 'login' ? 'Welcome Back' : `Create ${role.toLowerCase()} account`}</h3>
-          <p>{mode === 'login' ? 'Sign in to your FreightPilot AI account' : 'Join FreightPilot AI — the intelligent freight platform.'}</p>
+          <h3>{mode === 'forgot' ? 'Reset Password' : mode === 'login' ? 'Welcome Back' : `Create ${role.toLowerCase()} account`}</h3>
+          <p>{mode === 'forgot' ? 'Enter your account email to receive reset instructions.' : mode === 'login' ? 'Sign in to your FreightPilot AI account' : 'Join FreightPilot AI — the intelligent freight platform.'}</p>
         </div>
+
+        {mode === 'forgot' && (
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError(null);
+            setTimeout(() => {
+              setBusy(false);
+              setSuccessMsg(`If an account exists for ${email}, a password reset link has been dispatched.`);
+            }, 600);
+          }} className="form-stack auth-fields">
+            <div className="auth-input-group">
+              <span className="input-icon-slot"><Icon name="external" size={15}/></span>
+              <input className="auth-input-field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="Enter your registered email"/>
+            </div>
+            {error && <div className="inline-alert inline-alert-danger">{error}</div>}
+            {successMsg && <div className="inline-alert" style={{background:'rgba(244,237,224,0.1)',color:'#F4EDE0',border:'1px solid rgba(244,237,224,0.2)'}}>{successMsg}</div>}
+            <button className="btn-auth-submit" disabled={busy}>{busy ? 'Submitting…' : 'Send Reset Instructions'}</button>
+            <button type="button" className="auth-forgot-link" style={{display:'block',marginTop:8,textAlign:'center'}} onClick={() => { setMode('login'); setError(null); setSuccessMsg(null); }}>← Back to Sign In</button>
+          </form>
+        )}
 
         {mode === 'register' && <div className="role-selector auth-role-selector">
           <button type="button" className={`btn btn-sm ${role === 'BUYER' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRole('BUYER')}>Buyer account</button>
@@ -384,7 +406,7 @@ function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthen
             {role === 'BUYER' && <label>Company name <span className="optional-label">Optional</span><input value={businessName} onChange={(event) => setBusinessName(event.target.value)} placeholder="Company / organization"/></label>}
             <label>Phone number {role === 'BUYER' && <span className="optional-label">Optional · E.164 format</span>}<input type="tel" value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} required={role === 'SELLER'} pattern="\+[1-9]\d{7,14}" placeholder="+919876543210" autoComplete="tel"/></label>
           </>}
-          {mode === 'login' && <div className="auth-forgot-row"><button type="button" className="auth-forgot-link">Forgot password?</button></div>}
+          {mode === 'login' && <div className="auth-forgot-row"><button type="button" className="auth-forgot-link" onClick={() => { setMode('forgot'); setError(null); setSuccessMsg(null); }}>Forgot password?</button></div>}
           {error && <div className="inline-alert inline-alert-danger">{error}</div>}
           <button className="btn-auth-submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create account'}</button>
         </form>}
@@ -446,6 +468,7 @@ export default function App(): React.ReactElement {
   const [accountPhoneOtpSent, setAccountPhoneOtpSent] = useState(false);
   const [phoneSettingsBusy, setPhoneSettingsBusy] = useState(false);
   const [phoneSettingsMessage, setPhoneSettingsMessage] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [health, setHealth] = useState<{ status: string; service: string } | null>(null);
@@ -710,6 +733,7 @@ export default function App(): React.ReactElement {
   const currentPage = pageMeta[page];
   const topHeader = <header className="topbar">
     <div className="topbar-leading">
+      <button className="mobile-menu-trigger" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="Toggle navigation menu" title="Navigation menu"><Icon name="menu" size={18} /></button>
       <button className="back-button" onClick={goBack} aria-label="Go back" title="Go back"><Icon name="arrow" size={16} /></button>
       <div className="topbar-mobile-brand"><div className="brand-mark">FP</div><span>FreightPilot <b>AI</b></span></div>
     </div>
@@ -1093,6 +1117,20 @@ export default function App(): React.ReactElement {
     </section>}
   </>;
 
+  const renderNotFound = () => (
+    <section className="panel" style={{textAlign: 'center', padding: '60px 24px'}}>
+      <div className="empty-symbol" style={{margin: '0 auto 20px', width: 56, height: 56}}><Icon name="warning" size={32}/></div>
+      <span className="eyebrow">404 — ROUTE NOT FOUND</span>
+      <h2 style={{fontSize: '28px', marginTop: 8, marginBottom: 12}}>The requested page does not exist</h2>
+      <p style={{color: 'var(--text-secondary)', maxWidth: 480, margin: '0 auto 24px'}}>
+        The navigation link or URL anchor you followed is not recognized by the FreightPilot workspace router.
+      </p>
+      <button className="btn btn-primary" onClick={() => setPage('overview')}>
+        <Icon name="overview" size={16}/> Return to Dashboard
+      </button>
+    </section>
+  );
+
   const renderPage = () => {
     if (loading && page === 'overview') return <LoadingPanel label="Connecting to FreightPilot services…"/>;
     if (page === 'landing') return renderLanding();
@@ -1107,7 +1145,7 @@ export default function App(): React.ReactElement {
       case 'carriers': return renderCarriers();
       case 'documents': return renderDocuments();
       case 'settings': return renderSettings();
-      default: return renderOverview();
+      default: return renderNotFound();
     }
   };
 
@@ -1123,9 +1161,10 @@ export default function App(): React.ReactElement {
   }
 
   return <div className="app-shell">
-    <aside className="sidebar">
+    {mobileMenuOpen && <div className="sidebar-backdrop" onClick={() => setMobileMenuOpen(false)} />}
+    <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
       <div className="sidebar-brand"><div className="brand-mark">FP</div><div><strong>FreightPilot <span>AI</span></strong><small>MARITIME LOGISTICS</small></div></div>
-      <nav className="side-nav">{NAV_ITEMS.map((item) => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => setPage(item.id)}><Icon name={item.icon} size={18}/><span>{item.label}</span>{item.id === 'payments' && payments.some((payment) => payment.status === 'REVIEW_REQUIRED') && <i className="nav-alert-dot"/>}</button>)}</nav>
+      <nav className="side-nav">{NAV_ITEMS.map((item) => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => { setPage(item.id); setMobileMenuOpen(false); }}><Icon name={item.icon} size={18}/><span>{item.label}</span>{item.id === 'payments' && payments.some((payment) => payment.status === 'REVIEW_REQUIRED') && <i className="nav-alert-dot"/>}</button>)}</nav>
       <div className="sidebar-bottom">
         <div className="sidebar-user-card">
           <div className="user-card-avatar">{currentUser ? currentUser.email.slice(0, 1).toUpperCase() : 'SK'}</div>
