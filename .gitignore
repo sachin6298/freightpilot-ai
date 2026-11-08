@@ -67,3 +67,7 @@ Thumbs.db
 uploads/
 .claude/
 *.log
+
+*.db-shm
+*.db-wal
+*.db-journal
