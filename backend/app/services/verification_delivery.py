@@ -1,4 +1,5 @@
 """Transactional email/SMS delivery adapters. Never return verification secrets from API routes."""
+import json
 import logging
 from urllib.parse import quote
 import httpx
@@ -33,11 +34,21 @@ def send_verification_email(email: str, token: str) -> None:
 
 
 def send_phone_otp(phone_number: str, otp: str) -> None:
+    """Send OTP via Firebase Phone Authentication or legacy Twilio."""
     provider = settings.SMS_PROVIDER.lower()
     body = f"Your FreightPilot AI verification code is {otp}. It expires in 10 minutes."
+
     if provider == "console" and not settings.is_production:
         logger.info("DEV SMS VERIFICATION recipient=%s otp=%s", phone_number, otp)
         return
+
+    if provider == "firebase" and settings.FIREBASE_PROJECT_ID:
+        # Firebase Phone Authentication - backend triggers OTP via Firebase Admin SDK
+        # The actual OTP sending is done by Firebase; this is a compatibility shim
+        # In production, the frontend uses Firebase Client SDK to send/receive OTP
+        logger.info("FIREBASE SMS VERIFICATION (frontend-driven) recipient=%s", phone_number)
+        return
+
     if provider == "twilio" and settings.TWILIO_ACCOUNT_SID and settings.TWILIO_FROM_NUMBER:
         if settings.TWILIO_API_KEY_SID and settings.TWILIO_API_KEY_SECRET:
             auth = (settings.TWILIO_API_KEY_SID, settings.TWILIO_API_KEY_SECRET)
@@ -54,4 +65,43 @@ def send_phone_otp(phone_number: str, otp: str) -> None:
         )
         response.raise_for_status()
         return
-    raise DeliveryNotConfigured("SMS delivery is not configured. Set SMS_PROVIDER=twilio and Twilio credentials.")
+    raise DeliveryNotConfigured("SMS delivery is not configured. Set SMS_PROVIDER=firebase or twilio with credentials.")
+
+
+async def verify_firebase_phone_token(id_token: str) -> dict:
+    """Verify a Firebase ID token and return decoded claims.
+
+    Validates: signature, expiry, issuer, audience, and project.
+    Returns: dict with uid, phone_number, and other claims.
+    """
+    try:
+        import firebase_admin
+        from firebase_admin import auth, credentials
+
+        # Initialize Firebase Admin SDK if not already initialized
+        if not firebase_admin._apps:
+            if settings.FIREBASE_SERVICE_ACCOUNT_JSON:
+                cred = credentials.Certificate(json.loads(settings.FIREBASE_SERVICE_ACCOUNT_JSON))
+            else:
+                # Use default credentials (GOOGLE_APPLICATION_CREDENTIALS env var)
+                cred = credentials.ApplicationDefault()
+            firebase_admin.initialize_app(cred, {
+                'projectId': settings.FIREBASE_PROJECT_ID,
+            })
+
+        # Verify the ID token
+        decoded_token = auth.verify_id_token(id_token)
+
+        # Validate token is for phone auth
+        if 'phone_number' not in decoded_token:
+            raise ValueError("Token does not contain phone_number claim")
+
+        return {
+            'uid': decoded_token['uid'],
+            'phone_number': decoded_token['phone_number'],
+            'email': decoded_token.get('email'),
+            'email_verified': decoded_token.get('email_verified', False),
+        }
+    except Exception as e:
+        logger.error("Firebase token verification failed: %s", type(e).__name__)
+        raise ValueError(f"Invalid Firebase token: {str(e)}")

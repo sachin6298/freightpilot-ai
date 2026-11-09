@@ -30,7 +30,8 @@ async def lifespan(app: FastAPI):
     """Application lifespan context manager for startup and shutdown events."""
     # Schema changes in production are deployed explicitly with `alembic upgrade head`.
     # Automatic create_all is limited to local development/test environments.
-    if settings.AUTO_CREATE_DB and not settings.is_production:
+    # Initialize database if not in production and using SQLite
+    if not settings.is_production and settings.DATABASE_URL.startswith("sqlite"):
         initialize_database()
 
     # Seed demo data if in DEMO_MODE

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import uuid
 
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, ForeignKey, Index, Integer, JSON,
+    Boolean, Column, Date, DateTime, Enum, ForeignKey, Index, Integer, JSON,
     Numeric, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -22,7 +22,7 @@ class User(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(254), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
-    role = Column(String(30), nullable=False, default="BUYER")
+    role = Column(Enum('BUYER', 'SELLER', 'ADMIN', name='userrole'), nullable=False, default="BUYER")
     is_active = Column(Boolean, nullable=False, default=True)
     email_verified = Column(Boolean, nullable=False, default=False)
     phone_verified = Column(Boolean, nullable=False, default=False)

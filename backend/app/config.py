@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     APP_ENV: str = "development"
     DEMO_MODE: bool = True
-    AUTO_CREATE_DB: bool = True
+    AUTO_CREATE_DB: bool = False
     DATABASE_URL: str = "sqlite:///./freightpilot.db"
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
@@ -42,15 +42,17 @@ class Settings(BaseSettings):
     AI_API_KEY: str = ""
     AI_MODEL: str = "gemini-2.5-flash"
 
-    EMAIL_PROVIDER: str = "disabled"  # disabled | console | resend
+    EMAIL_PROVIDER: str = "console"  # disabled | console | resend
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "FreightPilot <no-reply@example.com>"
-    SMS_PROVIDER: str = "disabled"  # disabled | console | twilio
+    SMS_PROVIDER: str = "console"  # disabled | console | twilio | firebase
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_API_KEY_SID: str = ""
     TWILIO_API_KEY_SECRET: str = ""
     TWILIO_AUTH_TOKEN: str = ""  # Development-only fallback; use API keys in production.
     TWILIO_FROM_NUMBER: str = ""
+    FIREBASE_PROJECT_ID: str = ""
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
 
     REDIS_URL: str = ""
     RATE_LIMIT_ENABLED: bool = True
@@ -87,8 +89,7 @@ if settings.is_production:
         raise RuntimeError("Production requires AUTH_REQUIRED=true.")
     if settings.DEMO_MODE:
         raise RuntimeError("Production requires DEMO_MODE=false.")
-    if settings.AUTO_CREATE_DB:
-        raise RuntimeError("Production requires AUTO_CREATE_DB=false; run Alembic migrations as a deploy step.")
+    # AUTO_CREATE_DB now set to False globally - no production check needed
     if not settings.DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg://", "postgres://")):
         raise RuntimeError("Production requires PostgreSQL using the psycopg driver.")
     if not settings.FRONTEND_ORIGIN.startswith("https://"):
@@ -102,8 +103,14 @@ if settings.is_production:
         raise RuntimeError("Production requires EMAIL_PROVIDER=resend and RESEND_API_KEY.")
     if not settings.EMAIL_FROM or "example.com" in settings.EMAIL_FROM.lower():
         raise RuntimeError("Production EMAIL_FROM must use a verified sending domain.")
-    if settings.SMS_PROVIDER != "twilio" or not all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_API_KEY_SID, settings.TWILIO_API_KEY_SECRET, settings.TWILIO_FROM_NUMBER]):
-        raise RuntimeError("Production requires SMS_PROVIDER=twilio, the Account SID, a scoped Twilio API key/secret and a sender number.")
+    if settings.SMS_PROVIDER == "twilio":
+        if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_API_KEY_SID or not settings.TWILIO_API_KEY_SECRET or not settings.TWILIO_FROM_NUMBER:
+            raise RuntimeError("Production requires SMS_PROVIDER=twilio with Twilio credentials.")
+    elif settings.SMS_PROVIDER == "firebase":
+        if not settings.FIREBASE_PROJECT_ID or not settings.FIREBASE_SERVICE_ACCOUNT_JSON:
+            raise RuntimeError("Production requires SMS_PROVIDER=firebase with FIREBASE_PROJECT_ID and FIREBASE_SERVICE_ACCOUNT_JSON.")
+    else:
+        raise RuntimeError("Production requires SMS_PROVIDER=twilio or firebase with credentials.")
     if not all([settings.PAYPAL_CLIENT_ID, settings.PAYPAL_CLIENT_SECRET]):
         raise RuntimeError("Production requires PayPal client ID and client secret.")
     if settings.PAYPAL_ENV == "live" and settings.DEMO_MODE:

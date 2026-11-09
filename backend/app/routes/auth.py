@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from app.services.verification_delivery import send_verification_email, send_phone_otp, DeliveryNotConfigured
+from app.services.verification_delivery import send_verification_email, send_phone_otp, verify_firebase_phone_token, DeliveryNotConfigured
 from sqlalchemy.orm import Session
 
 from app.core.security import (
@@ -834,6 +834,123 @@ def verify_phone(payload: VerifyPhoneRequest, user: User = Depends(get_current_u
     db.commit()
 
     return {"code": "PHONE_VERIFIED", "message": "Phone number verified successfully."}
+
+
+# ================== Firebase Phone Authentication ==================
+
+class FirebasePhoneVerifyRequest(BaseModel):
+    """Request to verify a Firebase phone authentication ID token."""
+    id_token: str = Field(..., min_length=50, max_length=10000)
+    phone_number: str = Field(..., min_length=9, max_length=16, pattern=r"^\+[1-9]\d{7,14}$")
+
+
+@router.post("/firebase/verify-phone", response_model=TokenResponse)
+async def verify_firebase_phone(payload: FirebasePhoneVerifyRequest, db: Session = Depends(get_db)):
+    """Verify a Firebase Phone Authentication ID token and link to user account.
+
+    The frontend uses Firebase Client SDK to send OTP and get ID token.
+    Backend verifies the token and links the phone number to the authenticated user.
+    """
+    # Verify Firebase ID token
+    try:
+        claims = await verify_firebase_phone_token(payload.id_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail={"code": "INVALID_FIREBASE_TOKEN", "message": str(exc)})
+
+    # Ensure the phone number matches
+    if claims['phone_number'] != payload.phone_number.strip():
+        raise HTTPException(status_code=400, detail={"code": "PHONE_NUMBER_MISMATCH", "message": "Phone number does not match token."})
+
+    # Find or create user
+    user = db.query(User).filter(User.phone_number == claims['phone_number'], User.is_active.is_(True)).first()
+
+    if user:
+        # Update existing user
+        if not user.phone_verified:
+            user.phone_verified = True
+            db.commit()
+            db.refresh(user)
+    else:
+        # Create new user with phone verification
+        # We need an email - if not in claims, we can't create a full account yet
+        if not claims.get('email'):
+            raise HTTPException(status_code=422, detail={
+                "code": "EMAIL_REQUIRED",
+                "message": "Email is required to create account. Please sign up with email first."
+            })
+
+        try:
+            email = normalize_email(claims['email'])
+        except ValueError:
+            raise HTTPException(status_code=422, detail={"code": "INVALID_EMAIL", "message": "Invalid email from Firebase token."})
+
+        # Check if email already exists
+        existing_user = db.query(User).filter(func.lower(User.email) == email).first()
+        if existing_user:
+            if not existing_user.is_active:
+                raise HTTPException(status_code=403, detail={"code": "ACCOUNT_UNAVAILABLE", "message": "This account is unavailable."})
+            # Link phone to existing account
+            existing_user.phone_number = claims['phone_number']
+            existing_user.phone_verified = True
+            db.commit()
+            db.refresh(existing_user)
+            user = existing_user
+        else:
+            # Create new user
+            user = User(
+                email=email,
+                password_hash=hash_password(secrets.token_urlsafe(48)),  # Random password, login via phone
+                role=BUYER,
+                is_active=True,
+                email_verified=claims.get('email_verified', False),
+                phone_verified=True,
+                phone_number=claims['phone_number'],
+            )
+            db.add(user)
+            db.flush()
+            db.add(BuyerProfile(user_id=user.id, default_currency="USD"))
+            db.commit()
+            db.refresh(user)
+
+    return _token_response(user, db, not user.email_verified, False)
+
+
+@router.post("/firebase/link-phone", response_model=UserResponse)
+async def link_firebase_phone(payload: FirebasePhoneVerifyRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Link a verified Firebase phone number to the current authenticated user."""
+    # Verify Firebase ID token
+    try:
+        claims = await verify_firebase_phone_token(payload.id_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail={"code": "INVALID_FIREBASE_TOKEN", "message": str(exc)})
+
+    # Ensure the phone number matches
+    if claims['phone_number'] != payload.phone_number.strip():
+        raise HTTPException(status_code=400, detail={"code": "PHONE_NUMBER_MISMATCH", "message": "Phone number does not match token."})
+
+    # Check if phone is already linked to another account
+    existing = db.query(User).filter(
+        User.phone_number == claims['phone_number'],
+        User.id != user.id,
+        User.is_active.is_(True),
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail={"code": "PHONE_NUMBER_IN_USE", "message": "This phone number is already linked to another account."})
+
+    # Update user's phone
+    user.phone_number = claims['phone_number']
+    user.phone_verified = True
+
+    # Also update profile phone numbers
+    if user.buyer_profile:
+        user.buyer_profile.phone_number = claims['phone_number']
+    if user.seller_profile:
+        user.seller_profile.contact_phone = claims['phone_number']
+
+    db.commit()
+    db.refresh(user)
+
+    return user
 
 
 # ================== User Info Endpoints ==================
