@@ -30,7 +30,7 @@ def upgrade() -> None:
 
     # Update existing users: convert 'USER' role to 'BUYER'
     op.execute("UPDATE users SET role_new = 'BUYER' WHERE role = 'USER'")
-    op.execute("UPDATE users SET role_new = role WHERE role IN ('BUYER', 'SELLER', 'ADMIN')")
+    op.execute("UPDATE users SET role_new = role::text::userrole WHERE role IN ('BUYER', 'SELLER', 'ADMIN')")
 
     # Drop the index before the old column so the migration works on both
     # PostgreSQL and SQLite-backed test/development databases.
