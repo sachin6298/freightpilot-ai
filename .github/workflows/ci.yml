@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 on:
   push:
     branches: [main, master]
@@ -9,6 +9,20 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: freightpilot_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d freightpilot_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
@@ -30,14 +44,14 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q app
       - run: pytest -q
-      - name: Validate fresh database migrations
+      - name: Validate fresh PostgreSQL database migrations
         env:
           APP_ENV: test
           DEMO_MODE: "false"
           AUTO_CREATE_DB: "false"
           AUTH_REQUIRED: "false"
           RATE_LIMIT_ENABLED: "false"
-          DATABASE_URL: sqlite:///./migration-test.db
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/freightpilot_ci
           JWT_SECRET_KEY: ci-only-secret-not-for-deployment-use-32-bytes-minimum
         run: alembic upgrade head
   frontend:
