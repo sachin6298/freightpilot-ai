@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { setAuthToken, getAuthToken, fetchCurrentUser, login as apiLogin, registerBuyer as apiRegisterBuyer, registerSeller as apiRegisterSeller } from "../api";
+import { setAuthToken, getAuthToken, setRefreshToken, clearAuthTokens, fetchCurrentUser, login as apiLogin, registerBuyer as apiRegisterBuyer, registerSeller as apiRegisterSeller, refreshAccessToken } from "../api";
 import { verifyFirebasePhone, linkFirebasePhone } from "../api";
 import type { UserProfile, AuthResponse } from "../types";
 
@@ -37,9 +37,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = await fetchCurrentUser();
       setUser(userData);
     } catch {
-      // Token may be expired - clear it
-      setAuthToken(null);
-      setUser(null);
+      // Token may be expired - try to refresh
+      try {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          const userData = await fetchCurrentUser();
+          setUser(userData);
+        } else {
+          clearAuthTokens();
+          setUser(null);
+        }
+      } catch {
+        clearAuthTokens();
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -51,6 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const handleAuthResponse = useCallback(async (response: AuthResponse) => {
     setAuthToken(response.access_token);
+    if (response.refresh_token) {
+      setRefreshToken(response.refresh_token);
+    }
     const userData = await fetchCurrentUser();
     setUser(userData);
     setError(null);
@@ -96,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [handleAuthResponse]);
 
   const logout = useCallback(() => {
-    setAuthToken(null);
+    clearAuthTokens();
     setUser(null);
     setError(null);
     window.location.href = "/login";

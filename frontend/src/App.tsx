@@ -14,7 +14,8 @@ import {
   fetchCurrentUser, fetchHealth, fetchNotifications, fetchShipmentPayments,
   fetchShipmentQuotes, fetchShipmentEstimate, fetchShipments, fetchTracking,
   getAuthToken, login, registerBuyer, registerSeller, paypalClientId, refreshCarrierQuotes,
-  resetDemoData, setAuthToken, oauthSignIn, requestPhoneLoginOtp, verifyPhoneLoginOtp, updateAccountPhone, sendAccountPhoneVerification, verifyAccountPhone,
+  resetDemoData, setAuthToken, oauthSignIn, requestPhoneLoginOtp, verifyPhoneLoginOtp, updateAccountPhone,
+  linkFirebasePhone, deleteAccount, requestPasswordReset, resetPassword,
 } from './api';
 import {
   AnalyticsOverview, CarrierCatalog, CarrierPerformance, CopilotResult, NotificationItem,
@@ -143,8 +144,10 @@ function PhoneBrandIcon(): React.ReactElement {
   );
 }
 
-function AuthModal({ onClose, onAuthenticated, initialMode = 'login' }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void; initialMode?: 'login' | 'register' }): React.ReactElement {
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
+function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken = null }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void; initialMode?: 'login' | 'register' | 'reset-password'; resetToken?: string | null }): React.ReactElement {
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset-password'>(initialMode);
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
   const [method, setMethod] = useState<'password' | 'phone'>('password');
   const [role, setRole] = useState<'BUYER' | 'SELLER'>('BUYER');
   const [email, setEmail] = useState('');
@@ -355,11 +358,19 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login' }: { onClos
         </div>
 
         {mode === 'forgot' && (
-          <form onSubmit={(e) => {
+          <form onSubmit={async (e) => {
             e.preventDefault();
-            setBusy(false);
+            setBusy(true);
             setError(null);
-            setSuccessMsg('Password reset is not enabled by the current backend API. Please contact your platform administrator.');
+            setSuccessMsg(null);
+            try {
+              await requestPasswordReset(email);
+              setSuccessMsg('If an account exists for this email, a password reset link has been sent. Check your inbox.');
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to send reset email. Please try again.');
+            } finally {
+              setBusy(false);
+            }
           }} className="form-stack auth-fields">
             <div className="auth-input-group">
               <span className="input-icon-slot"><Icon name="external" size={15}/></span>
@@ -368,6 +379,49 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login' }: { onClos
             {error && <div className="inline-alert inline-alert-danger">{error}</div>}
             {successMsg && <div className="inline-alert" style={{background:'rgba(244,237,224,0.1)',color:'#F4EDE0',border:'1px solid rgba(244,237,224,0.2)'}}>{successMsg}</div>}
             <button className="btn-auth-submit" disabled={busy}>{busy ? 'Submitting…' : 'Send Reset Instructions'}</button>
+            <button type="button" className="auth-forgot-link" style={{display:'block',marginTop:8,textAlign:'center'}} onClick={() => { setMode('login'); setError(null); setSuccessMsg(null); }}>← Back to Sign In</button>
+          </form>
+        )}
+
+        {mode === 'reset-password' && (
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            if (!resetToken) {
+              setError('Invalid or missing reset token. Please request a new password reset link.');
+              return;
+            }
+            if (newPassword !== newPasswordConfirm) {
+              setError('Passwords do not match.');
+              return;
+            }
+            if (newPassword.length < 10) {
+              setError('Password must be at least 10 characters.');
+              return;
+            }
+            setBusy(true);
+            setError(null);
+            setSuccessMsg(null);
+            try {
+              await resetPassword(resetToken, newPassword);
+              setSuccessMsg('Password has been reset successfully. You can now sign in with your new password.');
+              setTimeout(() => { setMode('login'); setSuccessMsg(null); }, 3000);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to reset password. Please try again.');
+            } finally {
+              setBusy(false);
+            }
+          }} className="form-stack auth-fields">
+            <div className="auth-input-group">
+              <span className="input-icon-slot"><Icon name="shield" size={15}/></span>
+              <input className="auth-input-field" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={10} autoComplete="new-password" placeholder="Enter new password (min 10 characters)"/>
+            </div>
+            <div className="auth-input-group">
+              <span className="input-icon-slot"><Icon name="check" size={15}/></span>
+              <input className="auth-input-field" type="password" value={newPasswordConfirm} onChange={(event) => setNewPasswordConfirm(event.target.value)} required minLength={10} autoComplete="new-password" placeholder="Confirm new password"/>
+            </div>
+            {error && <div className="inline-alert inline-alert-danger">{error}</div>}
+            {successMsg && <div className="inline-alert" style={{background:'rgba(244,237,224,0.1)',color:'#F4EDE0',border:'1px solid rgba(244,237,224,0.2)'}}>{successMsg}</div>}
+            <button className="btn-auth-submit" disabled={busy}>{busy ? 'Resetting…' : 'Reset Password'}</button>
             <button type="button" className="auth-forgot-link" style={{display:'block',marginTop:8,textAlign:'center'}} onClick={() => { setMode('login'); setError(null); setSuccessMsg(null); }}>← Back to Sign In</button>
           </form>
         )}
@@ -476,16 +530,30 @@ export default function App(): React.ReactElement {
     const hash = window.location.hash.replace(/^#/, '').toLowerCase();
     if (pathname.endsWith('/register') || hash === 'register') return 'register' as const;
     if (pathname.endsWith('/login') || hash === 'login') return 'login' as const;
+    if (pathname.startsWith('/reset-password') || hash.startsWith('reset-password')) return 'reset-password' as const;
     return null;
   })();
   const [authOpen, setAuthOpen] = useState(() => initialAuthRoute !== null);
-  const [authInitialMode, setAuthInitialMode] = useState<'login' | 'register'>(initialAuthRoute ?? 'login');
+  const [authInitialMode, setAuthInitialMode] = useState<'login' | 'register' | 'reset-password'>(initialAuthRoute ?? 'login');
+  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const openAuth = (mode: 'login' | 'register' = 'login') => {
     setAuthInitialMode(mode);
     setAuthOpen(true);
     const authPath = mode === 'register' ? '/register' : '/login';
     if (window.location.pathname !== authPath) window.history.pushState({ auth: mode }, '', authPath);
   };
+
+  // Extract reset password token from URL
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const token = searchParams.get('token');
+    if (token) {
+      setResetPasswordToken(token);
+      if (authInitialMode === 'reset-password') {
+        setAuthOpen(true);
+      }
+    }
+  }, []);
   const closeAuth = () => {
     setAuthOpen(false);
     if (/\/(login|register)\/?$/i.test(window.location.pathname) || /^(login|register)$/i.test(window.location.hash.replace(/^#/, ''))) {
@@ -508,6 +576,11 @@ export default function App(): React.ReactElement {
   const [trackingBusy, setTrackingBusy] = useState(false);
   const [assessmentBusy, setAssessmentBusy] = useState<string | null>(null);
   const [carrierBusy, setCarrierBusy] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteAccountConfirm, setDeleteAccountConfirm] = useState('');
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState('');
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -592,6 +665,20 @@ export default function App(): React.ReactElement {
     if (!token) return;
     fetchCurrentUser().then((user) => { setCurrentUser(user); setAccountPhone(user.phone_number || ''); }).catch(() => { setAuthToken(null); setCurrentUser(null); });
   }, []);
+
+  // Periodic health check for Settings page
+  useEffect(() => {
+    if (page !== 'settings') return;
+    const interval = setInterval(async () => {
+      try {
+        const healthResult = await fetchHealth();
+        setHealth(healthResult);
+      } catch {
+        // Health check failed, keep previous state
+      }
+    }, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [page]);
 
   const filteredShipments = useMemo(() => shipments.filter((shipment) => `${shipment.id} ${shipment.cargo_type} ${shipment.origin} ${shipment.destination} ${shipment.status}`.toLowerCase().includes(search.toLowerCase())), [shipments, search]);
   const totalQuoteCount = analytics?.quote_count ?? shipments.reduce((sum, shipment) => sum + (shipment.quotes_count || 0), 0);
@@ -709,9 +796,16 @@ export default function App(): React.ReactElement {
     setPhoneSettingsBusy(true);
     setPhoneSettingsMessage('');
     try {
-      const result = await sendAccountPhoneVerification(accountPhone.trim());
+      // Use Firebase Phone Authentication for production
+      // The backend expects Firebase ID token verification
+      // We need to initialize Firebase reCAPTCHA and send OTP
+      const { createRecaptchaVerifier, sendPhoneOtp } = await import('./lib/firebaseAuth');
+      const recaptchaVerifier = createRecaptchaVerifier('recaptcha-container');
+      const { confirmationResult } = await sendPhoneOtp(accountPhone.trim(), recaptchaVerifier);
+      // Store confirmationResult for verification
+      (window as any).__phoneAuthConfirmationResult = confirmationResult;
       setAccountPhoneOtpSent(true);
-      setPhoneSettingsMessage(result.message || 'Verification code sent. Check your phone.');
+      setPhoneSettingsMessage('Verification code sent. Check your phone.');
     } catch (reason) {
       setPhoneSettingsMessage(reason instanceof Error ? reason.message : 'Could not send the verification code.');
     } finally {
@@ -725,8 +819,16 @@ export default function App(): React.ReactElement {
     setPhoneSettingsBusy(true);
     setPhoneSettingsMessage('');
     try {
-      await verifyAccountPhone(accountPhone.trim(), accountPhoneOtp.trim());
-      setCurrentUser((user) => user ? { ...user, phone_verified: true, phone_number: accountPhone.trim() } : user);
+      // Verify OTP using Firebase
+      const { verifyPhoneOtp } = await import('./lib/firebaseAuth');
+      const confirmationResult = (window as any).__phoneAuthConfirmationResult;
+      if (!confirmationResult) {
+        throw new Error('No verification session found. Please request a new code.');
+      }
+      const result = await verifyPhoneOtp(confirmationResult, accountPhoneOtp.trim());
+      // Link the verified phone to the user account via backend
+      const userData = await linkFirebasePhone(result.idToken, result.phoneNumber);
+      setCurrentUser(userData);
       setAccountPhoneOtpSent(false);
       setAccountPhoneOtp('');
       setPhoneSettingsMessage('Phone number verified successfully.');
@@ -958,19 +1060,60 @@ export default function App(): React.ReactElement {
         {currentUser.phone_number && !currentUser.phone_verified && <div className="phone-verification-actions">
           {!accountPhoneOtpSent ? <button className="btn btn-primary btn-sm" onClick={() => void sendAccountPhoneOtp()} disabled={phoneSettingsBusy}>{phoneSettingsBusy ? 'Sending…' : 'Send SMS verification code'}</button> :
             <form className="account-phone-otp-form" onSubmit={confirmAccountPhoneOtp}>
+              <div id="recaptcha-container" style={{display: 'none'}} />
               <label>Six-digit verification code<input value={accountPhoneOtp} onChange={(event) => setAccountPhoneOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" required placeholder="123456"/></label>
               <button className="btn btn-primary btn-sm" disabled={phoneSettingsBusy || accountPhoneOtp.length !== 6}>{phoneSettingsBusy ? 'Verifying…' : 'Verify phone'}</button>
               <button type="button" className="text-button" onClick={() => void sendAccountPhoneOtp()} disabled={phoneSettingsBusy}>Resend code</button>
             </form>}
         </div>}
         {currentUser.phone_verified && <p className="phone-verified-copy"><Icon name="check" size={15}/> Your mobile number is verified and cannot be changed from this screen.</p>}
-        <p className="account-phone-help">Use E.164 format, including the country code. Codes expire after 10 minutes and are limited to five attempts. Local development codes are printed in the backend terminal when SMS_PROVIDER=console.</p>
+        <p className="account-phone-help">Use E.164 format, including the country code. Codes expire after 10 minutes and are limited to five attempts. Production uses Firebase Phone Auth.</p>
         {phoneSettingsMessage && <div className="inline-alert phone-settings-message">{phoneSettingsMessage}</div>}
       </> : <div className="empty-inline"><strong>Sign in to manage account verification</strong><button className="text-button" onClick={() => openAuth('login')}>Open sign in</button></div>}
     </section>
     <section className="panel settings-panel"><div className="panel-header"><div><span className="eyebrow">SERVICE HEALTH</span><h3>Connected services</h3><p>Configuration visibility only; secrets are never shown in the browser.</p></div></div><div className="settings-list"><SettingRow icon="activity" title="FastAPI backend" detail={apiBaseUrl} value={health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()) ? 'Connected' : 'Unavailable'} good={Boolean(health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()))}/><SettingRow icon="database" title="Database" detail="PostgreSQL connection reported by backend" value={health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()) ? 'Available' : 'Unknown'} good={Boolean(health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()))}/><SettingRow icon="wallet" title="PayPal JavaScript SDK" detail="VITE_PAYPAL_CLIENT_ID" value={paypalClientId && !paypalClientId.toLowerCase().includes('replace') ? 'Client ID configured' : 'Not configured'} good={Boolean(paypalClientId && !paypalClientId.toLowerCase().includes('replace'))}/><SettingRow icon="spark" title="AI Copilot" detail="Provider and API key are configured on the backend" value="Backend-managed" good={null}/><SettingRow icon="truck" title="Live carrier integrations" detail={carrierCatalog?.note || 'Carrier adapter availability reported by backend.'} value={carrierCatalog?.live_integrations_available ? 'Available' : 'Not configured'} good={Boolean(carrierCatalog?.live_integrations_available)}/></div></section>
     <div className="settings-grid"><section className="panel"><div className="panel-header"><div><span className="eyebrow">APPLICATION MODE</span><h3>Environment</h3></div><span className="environment-pill"><span className="environment-dot"/>{health?.service === 'FreightPilot AI Backend' ? 'Production Ready' : 'Unknown'}</span></div><div className="setting-description"><p>Current backend mode is reported by <code>/health</code>. The demo environment should use PayPal Sandbox and clearly mark synthetic carrier data.</p><div className="detail-line"><span>API base URL</span><strong>{apiBaseUrl}</strong></div><div className="detail-line"><span>Signed-in account</span><strong>{currentUser?.email || 'Guest / demo'}</strong></div><div className="detail-line"><span>Data scope</span><strong>{analytics?.data_scope || 'Unavailable'}</strong></div></div></section><section className="panel"><div className="panel-header"><div><span className="eyebrow">DEMO CONTROLS</span><h3>Seed data</h3><p>Reset synthetic demo content for a fresh presentation.</p></div></div><div className="demo-control"><div className="demo-control-icon"><Icon name="refresh"/></div><div><strong>Restore demo dataset</strong><span>The backend prevents deleting a shipment with linked payment records.</span></div><button className="btn btn-secondary btn-sm" onClick={() => void handleReset()} disabled={resetting}>{resetting ? 'Resetting…' : 'Reset demo'}</button></div></section></div>
     <section className="panel"><div className="panel-header"><div><span className="eyebrow">CARRIER REGISTRY</span><h3>Available adapters</h3><p>These are backend adapter registrations, not a list of confirmed live shipping providers.</p></div></div>{carrierCatalog?.items.length ? <div className="adapter-grid">{carrierCatalog.items.map((item) => <div className="adapter-card" key={item.code}><div className="adapter-mark">{item.name.slice(0, 1)}</div><div><strong>{item.name}</strong><span>{item.code}</span></div><StatusBadge value={item.status === 'CONFIGURED' ? 'REGISTERED' : 'NOT CONFIGURED'}/></div>)}</div> : <div className="empty-inline"><strong>No adapter registered</strong><span>Configure a carrier connector in backend/app/services/carrier_service.py.</span></div>}</section>
+    {currentUser && <>
+      <section className="panel danger-zone-panel">
+        <div className="panel-header">
+          <div><span className="eyebrow danger-zone-label">DANGER ZONE</span><h3>Delete your account</h3><p>This action is irreversible. Your account will be permanently deleted after 30 days. During this period you can contact support to restore it.</p></div>
+        </div>
+        {!deleteAccountOpen ? (
+          <button className="btn btn-danger" onClick={() => setDeleteAccountOpen(true)}>Delete account</button>
+        ) : (
+          <form className="danger-zone-form" onSubmit={async (e) => {
+            e.preventDefault();
+            if (deleteAccountConfirm !== 'DELETE') {
+              setDeleteAccountError('Please type DELETE to confirm.');
+              return;
+            }
+            setDeleteAccountBusy(true);
+            setDeleteAccountError('');
+            try {
+              await deleteAccount(deleteAccountPassword, deleteAccountConfirm);
+              setDeleteAccountBusy(false);
+              setAuthToken(null);
+              setCurrentUser(null);
+              setPage('landing');
+              showToast('Account deleted successfully. You can contact support within 30 days to restore it.');
+            } catch (err) {
+              setDeleteAccountError(err instanceof Error ? err.message : 'Failed to delete account. Please try again.');
+              setDeleteAccountBusy(false);
+            }
+          }}>
+            <div className="danger-zone-warning"><Icon name="warning" size={20}/><strong>Warning:</strong> This will permanently delete your account and all associated data.</div>
+            <label>Type <strong>DELETE</strong> to confirm<input value={deleteAccountConfirm} onChange={(event) => setDeleteAccountConfirm(event.target.value)} placeholder="DELETE" required autoComplete="off"/></label>
+            <label>Enter your password<input type="password" value={deleteAccountPassword} onChange={(event) => setDeleteAccountPassword(event.target.value)} required autoComplete="current-password" placeholder="Your current password"/></label>
+            {deleteAccountError && <div className="inline-alert inline-alert-danger">{deleteAccountError}</div>}
+            <div className="danger-zone-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => { setDeleteAccountOpen(false); setDeleteAccountConfirm(''); setDeleteAccountPassword(''); setDeleteAccountError(''); }}>Cancel</button>
+              <button type="submit" className="btn btn-danger" disabled={deleteAccountBusy}>{deleteAccountBusy ? 'Deleting…' : 'Delete my account permanently'}</button>
+            </div>
+          </form>
+        )}
+      </section>
+    </>}
   </>;
 
   const renderCarriers = () => <>
@@ -1041,7 +1184,7 @@ export default function App(): React.ReactElement {
     return (
       <div className="public-website-shell">
         {renderLanding()}
-        {authOpen && <AuthModal onClose={closeAuth} onAuthenticated={handleAuthSuccess} initialMode={authInitialMode}/>}
+        {authOpen && <AuthModal onClose={closeAuth} onAuthenticated={handleAuthSuccess} initialMode={authInitialMode} resetToken={resetPasswordToken}/>}
         {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15}/></span>{toast}<button onClick={() => setToast(null)}><Icon name="close" size={14}/></button></div>}
         <NewShipmentModal isOpen={newShipmentOpen} onClose={() => setNewShipmentOpen(false)} onSubmit={handleCreateShipment}/>
       </div>
@@ -1074,7 +1217,7 @@ export default function App(): React.ReactElement {
       </FreightWorkspaceShell>
       {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15}/></span>{toast}<button onClick={() => setToast(null)}><Icon name="close" size={14}/></button></div>}
       <NewShipmentModal isOpen={newShipmentOpen} onClose={() => setNewShipmentOpen(false)} onSubmit={handleCreateShipment}/>
-      {authOpen && <AuthModal onClose={closeAuth} onAuthenticated={handleAuthSuccess} initialMode={authInitialMode}/>}
+      {authOpen && <AuthModal onClose={closeAuth} onAuthenticated={handleAuthSuccess} initialMode={authInitialMode} resetToken={resetPasswordToken}/>}
     </>
   );
 }

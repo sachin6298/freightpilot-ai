@@ -42,20 +42,20 @@ class Settings(BaseSettings):
     AI_API_KEY: str = ""
     AI_MODEL: str = "gemini-2.5-flash"
 
-    EMAIL_PROVIDER: str = "console"  # disabled | console | resend
+    EMAIL_PROVIDER: str = "console"
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "FreightPilot <no-reply@example.com>"
-    SMS_PROVIDER: str = "console"  # disabled | console | firebase
+    SMS_PROVIDER: str = "console"
     FIREBASE_PROJECT_ID: str = ""
     FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
 
     REDIS_URL: str = ""
     RATE_LIMIT_ENABLED: bool = True
-    STORAGE_BACKEND: str = "local"  # local | s3
+    STORAGE_BACKEND: str = "postgresql"  # postgresql | local | s3
     DOCUMENT_STORAGE_PATH: str = "./var/documents"
     S3_BUCKET: str = ""
     S3_REGION: str = "auto"
-    S3_ENDPOINT_URL: str = ""  # Set for Cloudflare R2 or another S3-compatible provider.
+    S3_ENDPOINT_URL: str = ""
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
     MAX_UPLOAD_BYTES: int = Field(default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
@@ -84,7 +84,6 @@ if settings.is_production:
         raise RuntimeError("Production requires AUTH_REQUIRED=true.")
     if settings.DEMO_MODE:
         raise RuntimeError("Production requires DEMO_MODE=false.")
-    # AUTO_CREATE_DB now set to False globally - no production check needed
     if not settings.DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg://", "postgres://")):
         raise RuntimeError("Production requires PostgreSQL using the psycopg driver.")
     if not settings.FRONTEND_ORIGIN.startswith("https://"):
@@ -98,16 +97,11 @@ if settings.is_production:
         raise RuntimeError("Production requires EMAIL_PROVIDER=resend and RESEND_API_KEY.")
     if not settings.EMAIL_FROM or "example.com" in settings.EMAIL_FROM.lower():
         raise RuntimeError("Production EMAIL_FROM must use a verified sending domain.")
-    if settings.SMS_PROVIDER == "firebase":
-        if not settings.FIREBASE_PROJECT_ID or not settings.FIREBASE_SERVICE_ACCOUNT_JSON:
-            raise RuntimeError("Production requires SMS_PROVIDER=firebase with FIREBASE_PROJECT_ID and FIREBASE_SERVICE_ACCOUNT_JSON.")
-    else:
+    if settings.SMS_PROVIDER != "firebase" or not settings.FIREBASE_PROJECT_ID or not settings.FIREBASE_SERVICE_ACCOUNT_JSON:
         raise RuntimeError("Production requires SMS_PROVIDER=firebase with credentials.")
     if not all([settings.PAYPAL_CLIENT_ID, settings.PAYPAL_CLIENT_SECRET]):
         raise RuntimeError("Production requires PayPal client ID and client secret.")
-    if settings.PAYPAL_ENV == "live" and settings.DEMO_MODE:
-        raise RuntimeError("Live PayPal credentials cannot be used in demo mode.")
-    if settings.STORAGE_BACKEND != "s3" or not all([settings.S3_BUCKET, settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY]):
-        raise RuntimeError("Production requires private S3-compatible object storage and bucket credentials.")
+    if settings.STORAGE_BACKEND != "postgresql":
+        raise RuntimeError("Production requires STORAGE_BACKEND=postgresql.")
     if not settings.API_PUBLIC_URL.startswith("https://"):
         raise RuntimeError("Production API_PUBLIC_URL must be HTTPS.")

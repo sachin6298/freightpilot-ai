@@ -239,9 +239,13 @@ export interface CalculatorResult {
 
 export interface AuthResponse {
   access_token: string;
+  refresh_token?: string;
   token_type: string;
   expires_in: number;
+  refresh_expires_in?: number;
   user: UserProfile;
+  requires_email_verification?: boolean;
+  requires_phone_verification?: boolean;
 }
 
 export interface PaymentOrderResponse extends PaymentRecord {}

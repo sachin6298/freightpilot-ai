@@ -6,15 +6,61 @@ import {
 } from './types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
-const TOKEN_KEY = 'freightpilot_access_token';
+const ACCESS_TOKEN_KEY = 'freightpilot_access_token';
+const REFRESH_TOKEN_KEY = 'freightpilot_refresh_token';
 
 export function getAuthToken(): string | null {
-  return window.localStorage.getItem(TOKEN_KEY);
+  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function getRefreshToken(): string | null {
+  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 export function setAuthToken(token: string | null): void {
-  if (token) window.localStorage.setItem(TOKEN_KEY, token);
-  else window.localStorage.removeItem(TOKEN_KEY);
+  if (token) window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
+  else window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+}
+
+export function setRefreshToken(token: string | null): void {
+  if (token) window.localStorage.setItem(REFRESH_TOKEN_KEY, token);
+  else window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+export function clearAuthTokens(): void {
+  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!response.ok) {
+      clearAuthTokens();
+      return null;
+    }
+
+    const data = await response.json() as AuthResponse;
+    setAuthToken(data.access_token);
+    if (data.refresh_token) {
+      setRefreshToken(data.refresh_token);
+    }
+    return data.access_token;
+  } catch {
+    clearAuthTokens();
+    return null;
+  }
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -161,4 +207,26 @@ export const linkFirebasePhone = (idToken: string, phoneNumber: string) =>
   request<UserProfile>('/api/auth/firebase/phone/link', {
     method: 'POST',
     body: JSON.stringify({ id_token: idToken, phone_number: phoneNumber }),
+  });
+
+
+// Password reset API
+export const requestPasswordReset = (email: string) =>
+  request<{ code: string; message: string }>('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+
+export const resetPassword = (token: string, password: string) =>
+  request<{ code: string; message: string }>('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  });
+
+
+// Account deletion API
+export const deleteAccount = (password: string, reason?: string) =>
+  request<{ code: string; message: string }>('/api/auth/me', {
+    method: 'DELETE',
+    body: JSON.stringify({ password, reason }),
   });

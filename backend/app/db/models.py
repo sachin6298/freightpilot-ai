@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import uuid
 
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Enum, ForeignKey, Index, Integer, JSON,
+    Boolean, Column, Date, DateTime, Enum, ForeignKey, Index, Integer, JSON, LargeBinary,
     Numeric, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -29,12 +29,16 @@ class User(Base):
     phone_number = Column(String(30), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deletion_reason = Column(Text, nullable=True)
 
     shipments = relationship("Shipment", back_populates="owner")
     buyer_profile = relationship("BuyerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     seller_profile = relationship("SellerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan", foreign_keys="[SellerProfile.user_id]")
     email_verifications = relationship("EmailVerification", back_populates="user", cascade="all, delete-orphan")
     phone_verifications = relationship("PhoneVerification", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
 
 
 class OAuthIdentity(Base):
@@ -154,6 +158,19 @@ class PhoneVerification(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     user = relationship("User", back_populates="phone_verifications")
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    user = relationship("User", back_populates="password_reset_tokens")
 
 
 class Shipment(Base):
@@ -335,6 +352,7 @@ class StoredDocument(Base):
     mime_type = Column(String(100), nullable=False)
     file_size = Column(Integer, nullable=False)
     sha256 = Column(String(64), nullable=False)
+    content = Column(LargeBinary, nullable=True)
     scan_status = Column(String(30), nullable=False, default="NOT_SCANNED")
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
 

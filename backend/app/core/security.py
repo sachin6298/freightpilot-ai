@@ -19,6 +19,9 @@ _password_hasher = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
 _bearer_scheme = HTTPBearer(auto_error=False)
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
+# Token expiration settings
+REFRESH_TOKEN_EXPIRE_DAYS = 30
+
 
 def normalize_email(email: str) -> str:
     normalized = email.strip().lower()
@@ -66,6 +69,42 @@ def create_access_token(user: User) -> tuple[str, int]:
     }
     token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     return token, expires_in
+
+
+def create_refresh_token(user: User) -> tuple[str, int]:
+    """Create a long-lived refresh token for session persistence."""
+    expires_in = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user.id,
+        "role": user.role,
+        "iat": now,
+        "exp": now + timedelta(seconds=expires_in),
+        "iss": "freightpilot-ai",
+        "jti": str(uuid.uuid4()),
+        "typ": "refresh",
+    }
+    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return token, expires_in
+
+
+def decode_refresh_token(token: str) -> dict:
+    """Decode and validate a refresh token, returning the payload."""
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM], issuer="freightpilot-ai",
+            options={"require": ["exp", "iat", "sub", "iss", "jti", "typ"]},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail={
+            "code": "INVALID_REFRESH_TOKEN", "message": "The refresh token is invalid or expired.",
+        }, headers={"WWW-Authenticate": "Bearer"})
+    if payload.get("typ") != "refresh":
+        raise HTTPException(status_code=401, detail={
+            "code": "INVALID_TOKEN_TYPE", "message": "The supplied token cannot be used for session refresh.",
+        }, headers={"WWW-Authenticate": "Bearer"})
+    return payload
 
 
 def get_optional_current_user(
