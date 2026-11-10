@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import uuid
 
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Enum, ForeignKey, Index, Integer, JSON,
+    Boolean, Column, Date, DateTime, Enum, ForeignKey, Index, Integer, JSON, LargeBinary,
     Numeric, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -335,6 +335,7 @@ class StoredDocument(Base):
     mime_type = Column(String(100), nullable=False)
     file_size = Column(Integer, nullable=False)
     sha256 = Column(String(64), nullable=False)
+    content = Column(LargeBinary, nullable=True)
     scan_status = Column(String(30), nullable=False, default="NOT_SCANNED")
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
 
