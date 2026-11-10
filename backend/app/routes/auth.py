@@ -19,7 +19,7 @@ from app.services.verification_delivery import send_verification_email, send_pho
 from sqlalchemy.orm import Session
 
 from app.core.security import (
-    create_access_token, get_current_user, hash_password,
+    create_access_token, create_refresh_token, decode_refresh_token, get_current_user, hash_password,
     normalize_email, verify_password,
     require_buyer, require_seller, require_admin,
     require_verified_email, require_verified_phone, require_full_verification,
@@ -139,8 +139,10 @@ class SellerProfileResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
     expires_in: int
+    refresh_expires_in: int | None = None
     user: UserResponse
     requires_email_verification: bool = False
     requires_phone_verification: bool = False
@@ -164,11 +166,14 @@ def _generate_otp() -> str:
 
 
 def _token_response(user: User, db: Session, requires_email_verification: bool = False, requires_phone_verification: bool = False) -> dict:
-    token, expires_in = create_access_token(user)
+    access_token, expires_in = create_access_token(user)
+    refresh_token, refresh_expires_in = create_refresh_token(user)
     return {
-        "access_token": token,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": expires_in,
+        "refresh_expires_in": refresh_expires_in,
         "user": {
             "id": user.id,
             "email": user.email,
@@ -996,7 +1001,28 @@ def get_seller_profile(user: User = Depends(get_current_user), db: Session = Dep
     return profile
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=50, max_length=5000)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_access_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """Refresh an access token using a valid refresh token."""
+    # Decode and validate refresh token
+    refresh_payload = decode_refresh_token(payload.refresh_token)
+    user_id = refresh_payload["sub"]
+
+    user = db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
+    if not user:
+        raise HTTPException(status_code=401, detail={
+            "code": "USER_INACTIVE", "message": "The account is unavailable.",
+        })
+
+    # Issue new access token
+    return _token_response(user, db, not user.email_verified, not user.phone_verified)
+
+
 @router.post("/logout")
 def logout():
-    """Logout endpoint. Client discards the token."""
+    """Logout endpoint. Client discards the tokens."""
     return {"code": "LOGGED_OUT", "message": "Logged out successfully."}

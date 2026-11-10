@@ -14,7 +14,8 @@ import {
   fetchCurrentUser, fetchHealth, fetchNotifications, fetchShipmentPayments,
   fetchShipmentQuotes, fetchShipmentEstimate, fetchShipments, fetchTracking,
   getAuthToken, login, registerBuyer, registerSeller, paypalClientId, refreshCarrierQuotes,
-  resetDemoData, setAuthToken, oauthSignIn, requestPhoneLoginOtp, verifyPhoneLoginOtp, updateAccountPhone, sendAccountPhoneVerification, verifyAccountPhone,
+  resetDemoData, setAuthToken, oauthSignIn, requestPhoneLoginOtp, verifyPhoneLoginOtp, updateAccountPhone,
+  linkFirebasePhone,
 } from './api';
 import {
   AnalyticsOverview, CarrierCatalog, CarrierPerformance, CopilotResult, NotificationItem,
@@ -593,6 +594,20 @@ export default function App(): React.ReactElement {
     fetchCurrentUser().then((user) => { setCurrentUser(user); setAccountPhone(user.phone_number || ''); }).catch(() => { setAuthToken(null); setCurrentUser(null); });
   }, []);
 
+  // Periodic health check for Settings page
+  useEffect(() => {
+    if (page !== 'settings') return;
+    const interval = setInterval(async () => {
+      try {
+        const healthResult = await fetchHealth();
+        setHealth(healthResult);
+      } catch {
+        // Health check failed, keep previous state
+      }
+    }, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [page]);
+
   const filteredShipments = useMemo(() => shipments.filter((shipment) => `${shipment.id} ${shipment.cargo_type} ${shipment.origin} ${shipment.destination} ${shipment.status}`.toLowerCase().includes(search.toLowerCase())), [shipments, search]);
   const totalQuoteCount = analytics?.quote_count ?? shipments.reduce((sum, shipment) => sum + (shipment.quotes_count || 0), 0);
   const capturedSpend = analytics?.captured_spend_by_currency || [];
@@ -709,9 +724,16 @@ export default function App(): React.ReactElement {
     setPhoneSettingsBusy(true);
     setPhoneSettingsMessage('');
     try {
-      const result = await sendAccountPhoneVerification(accountPhone.trim());
+      // Use Firebase Phone Authentication for production
+      // The backend expects Firebase ID token verification
+      // We need to initialize Firebase reCAPTCHA and send OTP
+      const { createRecaptchaVerifier, sendPhoneOtp } = await import('./lib/firebaseAuth');
+      const recaptchaVerifier = createRecaptchaVerifier('recaptcha-container');
+      const { confirmationResult } = await sendPhoneOtp(accountPhone.trim(), recaptchaVerifier);
+      // Store confirmationResult for verification
+      (window as any).__phoneAuthConfirmationResult = confirmationResult;
       setAccountPhoneOtpSent(true);
-      setPhoneSettingsMessage(result.message || 'Verification code sent. Check your phone.');
+      setPhoneSettingsMessage('Verification code sent. Check your phone.');
     } catch (reason) {
       setPhoneSettingsMessage(reason instanceof Error ? reason.message : 'Could not send the verification code.');
     } finally {
@@ -725,8 +747,16 @@ export default function App(): React.ReactElement {
     setPhoneSettingsBusy(true);
     setPhoneSettingsMessage('');
     try {
-      await verifyAccountPhone(accountPhone.trim(), accountPhoneOtp.trim());
-      setCurrentUser((user) => user ? { ...user, phone_verified: true, phone_number: accountPhone.trim() } : user);
+      // Verify OTP using Firebase
+      const { verifyPhoneOtp } = await import('./lib/firebaseAuth');
+      const confirmationResult = (window as any).__phoneAuthConfirmationResult;
+      if (!confirmationResult) {
+        throw new Error('No verification session found. Please request a new code.');
+      }
+      const result = await verifyPhoneOtp(confirmationResult, accountPhoneOtp.trim());
+      // Link the verified phone to the user account via backend
+      const userData = await linkFirebasePhone(result.idToken, result.phoneNumber);
+      setCurrentUser(userData);
       setAccountPhoneOtpSent(false);
       setAccountPhoneOtp('');
       setPhoneSettingsMessage('Phone number verified successfully.');
@@ -958,13 +988,14 @@ export default function App(): React.ReactElement {
         {currentUser.phone_number && !currentUser.phone_verified && <div className="phone-verification-actions">
           {!accountPhoneOtpSent ? <button className="btn btn-primary btn-sm" onClick={() => void sendAccountPhoneOtp()} disabled={phoneSettingsBusy}>{phoneSettingsBusy ? 'Sending…' : 'Send SMS verification code'}</button> :
             <form className="account-phone-otp-form" onSubmit={confirmAccountPhoneOtp}>
+              <div id="recaptcha-container" style={{display: 'none'}} />
               <label>Six-digit verification code<input value={accountPhoneOtp} onChange={(event) => setAccountPhoneOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" required placeholder="123456"/></label>
               <button className="btn btn-primary btn-sm" disabled={phoneSettingsBusy || accountPhoneOtp.length !== 6}>{phoneSettingsBusy ? 'Verifying…' : 'Verify phone'}</button>
               <button type="button" className="text-button" onClick={() => void sendAccountPhoneOtp()} disabled={phoneSettingsBusy}>Resend code</button>
             </form>}
         </div>}
         {currentUser.phone_verified && <p className="phone-verified-copy"><Icon name="check" size={15}/> Your mobile number is verified and cannot be changed from this screen.</p>}
-        <p className="account-phone-help">Use E.164 format, including the country code. Codes expire after 10 minutes and are limited to five attempts. Local development codes are printed in the backend terminal when SMS_PROVIDER=console.</p>
+        <p className="account-phone-help">Use E.164 format, including the country code. Codes expire after 10 minutes and are limited to five attempts. Production uses Firebase Phone Auth.</p>
         {phoneSettingsMessage && <div className="inline-alert phone-settings-message">{phoneSettingsMessage}</div>}
       </> : <div className="empty-inline"><strong>Sign in to manage account verification</strong><button className="text-button" onClick={() => openAuth('login')}>Open sign in</button></div>}
     </section>
