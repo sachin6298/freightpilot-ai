@@ -45,12 +45,7 @@ class Settings(BaseSettings):
     EMAIL_PROVIDER: str = "console"  # disabled | console | resend
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "FreightPilot <no-reply@example.com>"
-    SMS_PROVIDER: str = "console"  # disabled | console | twilio | firebase
-    TWILIO_ACCOUNT_SID: str = ""
-    TWILIO_API_KEY_SID: str = ""
-    TWILIO_API_KEY_SECRET: str = ""
-    TWILIO_AUTH_TOKEN: str = ""  # Development-only fallback; use API keys in production.
-    TWILIO_FROM_NUMBER: str = ""
+    SMS_PROVIDER: str = "console"  # disabled | console | firebase
     FIREBASE_PROJECT_ID: str = ""
     FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
 
@@ -103,14 +98,11 @@ if settings.is_production:
         raise RuntimeError("Production requires EMAIL_PROVIDER=resend and RESEND_API_KEY.")
     if not settings.EMAIL_FROM or "example.com" in settings.EMAIL_FROM.lower():
         raise RuntimeError("Production EMAIL_FROM must use a verified sending domain.")
-    if settings.SMS_PROVIDER == "twilio":
-        if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_API_KEY_SID or not settings.TWILIO_API_KEY_SECRET or not settings.TWILIO_FROM_NUMBER:
-            raise RuntimeError("Production requires SMS_PROVIDER=twilio with Twilio credentials.")
-    elif settings.SMS_PROVIDER == "firebase":
+    if settings.SMS_PROVIDER == "firebase":
         if not settings.FIREBASE_PROJECT_ID or not settings.FIREBASE_SERVICE_ACCOUNT_JSON:
             raise RuntimeError("Production requires SMS_PROVIDER=firebase with FIREBASE_PROJECT_ID and FIREBASE_SERVICE_ACCOUNT_JSON.")
     else:
-        raise RuntimeError("Production requires SMS_PROVIDER=twilio or firebase with credentials.")
+        raise RuntimeError("Production requires SMS_PROVIDER=firebase with credentials.")
     if not all([settings.PAYPAL_CLIENT_ID, settings.PAYPAL_CLIENT_SECRET]):
         raise RuntimeError("Production requires PayPal client ID and client secret.")
     if settings.PAYPAL_ENV == "live" and settings.DEMO_MODE:

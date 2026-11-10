@@ -34,38 +34,26 @@ def send_verification_email(email: str, token: str) -> None:
 
 
 def send_phone_otp(phone_number: str, otp: str) -> None:
-    """Send OTP via Firebase Phone Authentication or legacy Twilio."""
+    """Send OTP via Firebase Phone Authentication.
+
+    Note: With Firebase Phone Auth, the OTP is sent by Firebase Client SDK on the frontend.
+    This function is a compatibility shim for the legacy SMS flow.
+    In the Firebase flow, the frontend handles OTP sending/receiving via signInWithPhoneNumber.
+    """
     provider = settings.SMS_PROVIDER.lower()
-    body = f"Your FreightPilot AI verification code is {otp}. It expires in 10 minutes."
 
     if provider == "console" and not settings.is_production:
         logger.info("DEV SMS VERIFICATION recipient=%s otp=%s", phone_number, otp)
         return
 
     if provider == "firebase" and settings.FIREBASE_PROJECT_ID:
-        # Firebase Phone Authentication - backend triggers OTP via Firebase Admin SDK
-        # The actual OTP sending is done by Firebase; this is a compatibility shim
-        # In production, the frontend uses Firebase Client SDK to send/receive OTP
+        # Firebase Phone Authentication - frontend-driven via Firebase Client SDK
+        # The backend doesn't send the OTP; Firebase handles it client-side
+        # This is a no-op for the Firebase flow; kept for compatibility
         logger.info("FIREBASE SMS VERIFICATION (frontend-driven) recipient=%s", phone_number)
         return
 
-    if provider == "twilio" and settings.TWILIO_ACCOUNT_SID and settings.TWILIO_FROM_NUMBER:
-        if settings.TWILIO_API_KEY_SID and settings.TWILIO_API_KEY_SECRET:
-            auth = (settings.TWILIO_API_KEY_SID, settings.TWILIO_API_KEY_SECRET)
-        elif not settings.is_production and settings.TWILIO_AUTH_TOKEN:
-            # Local-only compatibility; production must use a scoped API key.
-            auth = (settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        else:
-            raise DeliveryNotConfigured("Twilio API key credentials are required. Create a scoped key in the Twilio Console.")
-        response = httpx.post(
-            f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Messages.json",
-            auth=auth,
-            data={"From": settings.TWILIO_FROM_NUMBER, "To": phone_number, "Body": body},
-            timeout=12.0,
-        )
-        response.raise_for_status()
-        return
-    raise DeliveryNotConfigured("SMS delivery is not configured. Set SMS_PROVIDER=firebase or twilio with credentials.")
+    raise DeliveryNotConfigured("SMS delivery is not configured. Set SMS_PROVIDER=firebase with FIREBASE_PROJECT_ID and FIREBASE_SERVICE_ACCOUNT_JSON.")
 
 
 async def verify_firebase_phone_token(id_token: str) -> dict:

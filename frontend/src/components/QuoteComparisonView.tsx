@@ -81,7 +81,7 @@ export const QuoteComparisonView: React.FC<QuoteComparisonViewProps> = ({
     <div className="quote-comparison-container">
       <div className="section-toolbar">
         <div>
-          <h3 className="section-title">Freight Quote Comparison &amp; Risk Review</h3>
+          <h3 className="section-title">Freight Quote Comparison & Risk Review</h3>
           <p className="section-subtitle">
             Normalized quotes with transparent risk signals and benchmark variance.
           </p>
@@ -262,7 +262,7 @@ export const QuoteComparisonView: React.FC<QuoteComparisonViewProps> = ({
                   className="btn btn-secondary btn-sm"
                   onClick={() => onInspectQuote(quote)}
                 >
-                  Full Breakdown &amp; Terms
+                  Full Breakdown & Terms
                 </button>
 
                 <button

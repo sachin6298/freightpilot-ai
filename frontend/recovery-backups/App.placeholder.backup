@@ -1,0 +1,28 @@
+export default function App() {
+    return (<main className="min-h-screen bg-[#F7F6F0] text-[#292F2B]">
+      <header className="flex items-center justify-between border-b border-[#E6E9E1] bg-white px-8 py-5">
+        <div className="text-xl font-bold text-[#175B45]">
+          FreightPilot AI
+        </div>
+
+        <div className="text-sm text-[#737B75]">
+          Intelligent Logistics Platform
+        </div>
+      </header>
+
+      <section className="mx-auto max-w-6xl px-8 py-24">
+        <p className="mb-4 text-sm font-semibold uppercase tracking-widest text-[#175B45]">
+          Next-generation freight management
+        </p>
+
+        <h1 className="max-w-3xl text-5xl font-bold tracking-tight">
+          Ship smarter. Trade globally.
+        </h1>
+
+        <p className="mt-6 max-w-xl text-lg text-[#737B75]">
+          A completely new FreightPilot AI experience is being built
+          using Watermelon UI.
+        </p>
+      </section>
+    </main>);
+}

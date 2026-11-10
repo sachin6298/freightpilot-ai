@@ -1,5 +1,5 @@
-# Render Blueprint for the FastAPI API, PostgreSQL and Redis-compatible rate-limit store.
-# Vercel hosts the frontend separately. All credentials are entered in Render Dashboard.
+# Render Blueprint for the FastAPI API, PostgreSQL, Redis, and Frontend static site.
+# All credentials are entered in Render Dashboard.
 services:
   - type: web
     name: freightpilot-api
@@ -75,14 +75,10 @@ services:
       - key: EMAIL_FROM
         sync: false
       - key: SMS_PROVIDER
-        value: twilio
-      - key: TWILIO_ACCOUNT_SID
+        value: firebase
+      - key: FIREBASE_PROJECT_ID
         sync: false
-      - key: TWILIO_API_KEY_SID
-        sync: false
-      - key: TWILIO_API_KEY_SECRET
-        sync: false
-      - key: TWILIO_FROM_NUMBER
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
       - key: STORAGE_BACKEND
         value: s3
@@ -112,6 +108,31 @@ services:
     ipAllowList: []
     maxmemoryPolicy: noeviction
     persistenceMode: off
+
+  - type: web
+    name: freightpilot-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: freightpilot-api
+          property: url
+      - key: VITE_PAYPAL_CLIENT_ID
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: VITE_APPLE_CLIENT_ID
+        sync: false
+      - key: VITE_APPLE_REDIRECT_URI
+        sync: false
 
 databases:
   - name: freightpilot-postgres

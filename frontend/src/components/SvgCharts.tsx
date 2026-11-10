@@ -8,17 +8,10 @@ export function ShipmentVolumeChart({
   points?: Array<{ label: string; value: number }>;
   height?: number;
 }) {
-  const data = points && points.length >= 2 ? points : [
-    { label: 'Apr', value: 42 },
-    { label: 'May', value: 78 },
-    { label: 'Jun', value: 65 },
-    { label: 'Jul', value: 110 },
-    { label: 'Aug', value: 95 },
-    { label: 'Sep', value: 138 },
-    { label: 'Oct', value: 128 },
-  ];
+  const data = points || [];
+  if (data.length < 2) return <div className="chart-empty-state">Shipment history will appear when records are available.</div>;
 
-  const maxVal = Math.max(...data.map((d) => d.value), 160);
+  const maxVal = Math.max(...data.map((d) => d.value), 1);
   const width = 560;
   const paddingX = 36;
   const paddingY = 24;
@@ -137,81 +130,17 @@ export function ShipmentVolumeChart({
   );
 }
 
-export function ShipmentsByModeChart({
-  counts,
-  total = 128,
-}: {
-  counts?: Record<string, number>;
-  total?: number;
-}) {
-  const modes = [
-    { label: 'Sea', count: counts?.['Sea'] ?? 66, pct: 52, color: '#FF6B5B' },
-    { label: 'Air', count: counts?.['Air'] ?? 31, pct: 24, color: '#F4EDE0' },
-    { label: 'Road', count: counts?.['Road'] ?? 21, pct: 16, color: 'rgba(255, 107, 91, 0.65)' },
-    { label: 'Rail', count: counts?.['Rail'] ?? 10, pct: 8, color: 'rgba(244, 237, 224, 0.4)' },
-  ];
-
+export function ShipmentsByModeChart({ counts, total }: { counts?: Record<string, number>; total?: number }) {
+  const modes = Object.entries(counts || {}).filter(([, value]) => value > 0).map(([label, count]) => ({ label, count }));
+  const actualTotal = total ?? modes.reduce((sum, item) => sum + item.count, 0);
+  if (!modes.length || actualTotal <= 0) return <div className="chart-empty-state">Mode breakdown is not available from the current API records.</div>;
+  const palette = ['#FF6B5B', '#F4EDE0', 'rgba(255, 107, 91, 0.65)', 'rgba(244, 237, 224, 0.4)'];
   const size = 150;
   const strokeWidth = 20;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-
-  let accumulatedPercent = 0;
-
-  return (
-    <div className="svg-donut-container">
-      <div className="svg-donut-graphic">
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="svg-donut">
-          {/* Base track */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke="rgba(244, 237, 224, 0.08)"
-            strokeWidth={strokeWidth}
-          />
-          {modes.map((m) => {
-            const percent = m.pct / 100;
-            const strokeDasharray = `${percent * circumference} ${circumference}`;
-            const strokeDashoffset = -accumulatedPercent * circumference;
-            accumulatedPercent += percent;
-
-            return (
-              <circle
-                key={m.label}
-                cx={size / 2}
-                cy={size / 2}
-                r={radius}
-                fill="none"
-                stroke={m.color}
-                strokeWidth={strokeWidth}
-                strokeDasharray={strokeDasharray}
-                strokeDashoffset={strokeDashoffset}
-                transform={`rotate(-90 ${size / 2} ${size / 2})`}
-                className="donut-segment"
-              >
-                <title>{`${m.label}: ${m.pct}%`}</title>
-              </circle>
-            );
-          })}
-        </svg>
-        <div className="donut-center-stat">
-          <strong>{total}</strong>
-          <span>Total</span>
-        </div>
-      </div>
-      <div className="donut-legend">
-        {modes.map((m) => (
-          <div className="legend-row" key={m.label}>
-            <span className="legend-dot" style={{ background: m.color }} />
-            <span className="legend-label">{m.label}</span>
-            <strong className="legend-pct">{m.pct}%</strong>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  let accumulated = 0;
+  return <div className="svg-donut-container"><div className="svg-donut-graphic"><svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="svg-donut"><circle cx={size/2} cy={size/2} r={radius} fill="none" stroke="rgba(244,237,224,.08)" strokeWidth={strokeWidth}/>{modes.map((mode, index) => { const fraction = mode.count / actualTotal; const offset = -accumulated * circumference; accumulated += fraction; return <circle key={mode.label} cx={size/2} cy={size/2} r={radius} fill="none" stroke={palette[index % palette.length]} strokeWidth={strokeWidth} strokeDasharray={`${fraction*circumference} ${circumference}`} strokeDashoffset={offset} transform={`rotate(-90 ${size/2} ${size/2})`}><title>{`${mode.label}: ${mode.count}`}</title></circle>; })}</svg><div className="donut-center-stat"><strong>{actualTotal}</strong><span>Total</span></div></div><div className="donut-legend">{modes.map((mode,index) => <div className="legend-row" key={mode.label}><span className="legend-dot" style={{background:palette[index % palette.length]}}/><span className="legend-label">{mode.label}</span><strong className="legend-pct">{Math.round(mode.count/actualTotal*100)}%</strong></div>)}</div></div>;
 }
 
 export function SpendTrendBarChart({
@@ -219,17 +148,10 @@ export function SpendTrendBarChart({
 }: {
   items?: Array<{ month: string; amount: number }>;
 }) {
-  const data = items || [
-    { month: 'Apr', amount: 85000 },
-    { month: 'May', amount: 125000 },
-    { month: 'Jun', amount: 98000 },
-    { month: 'Jul', amount: 168000 },
-    { month: 'Aug', amount: 142000 },
-    { month: 'Sep', amount: 195000 },
-    { month: 'Oct', amount: 248320 },
-  ];
+  const data = items || [];
+  if (!data.length) return <div className="chart-empty-state">Quote history will appear when records are available.</div>;
 
-  const maxVal = 260000;
+  const maxVal = Math.max(...data.map((item) => item.amount), 1);
   const height = 180;
   const width = 520;
   const paddingX = 36;
@@ -270,7 +192,7 @@ export function SpendTrendBarChart({
                 fill="url(#barGrad)"
                 className="animated-bar"
               >
-                <title>{`${d.month}: $${d.amount.toLocaleString()}`}</title>
+                <title>{`${d.month}: ${d.amount.toLocaleString()}`}</title>
               </rect>
               <text
                 x={x + barWidth / 2}
@@ -290,7 +212,8 @@ export function SpendTrendBarChart({
   );
 }
 
-export function RiskGauge({ score = 23 }: { score?: number }) {
+export function RiskGauge({ score }: { score?: number }) {
+  if (score === undefined || !Number.isFinite(score)) return <div className="chart-empty-state">No risk score is available.</div>;
   const radius = 64;
   const stroke = 14;
   const size = 160;
@@ -330,7 +253,7 @@ export function RiskGauge({ score = 23 }: { score?: number }) {
       </svg>
       <div className="gauge-score-readout">
         <strong>{score}</strong>
-        <span>Active Alerts</span>
+        <span>Risk score</span>
       </div>
     </div>
   );
