@@ -30,6 +30,9 @@ wheels/
 htmlcov/
 .mypy_cache/
 
+# Allow frontend/src/lib (not a Python venv)
+!frontend/src/lib/
+
 # Virtual Environments
 .venv/
 venv/
