@@ -148,3 +148,17 @@ export const verifyAccountPhone = (phoneNumber: string, otp: string) =>
     method: 'POST',
     body: JSON.stringify({ phone_number: phoneNumber, otp }),
   });
+
+
+// Firebase phone authentication API
+export const verifyFirebasePhone = (idToken: string, phoneNumber: string) =>
+  request<AuthResponse>('/api/auth/firebase/phone/verify', {
+    method: 'POST',
+    body: JSON.stringify({ id_token: idToken, phone_number: phoneNumber }),
+  });
+
+export const linkFirebasePhone = (idToken: string, phoneNumber: string) =>
+  request<UserProfile>('/api/auth/firebase/phone/link', {
+    method: 'POST',
+    body: JSON.stringify({ id_token: idToken, phone_number: phoneNumber }),
+  });

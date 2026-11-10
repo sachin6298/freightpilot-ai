@@ -1,0 +1,300 @@
+/* =========================================
+   CONTACT SECTION - LIGHT PREMIUM THEME
+========================================= */
+
+.fp-contact {
+    position: relative;
+    width: 100%;
+    padding: 110px 24px 90px;
+    background: #f7f6f2;
+    color: #171717;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+/* Subtle background decoration */
+
+.fp-contact::before {
+    content: "";
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    top: -250px;
+    right: -150px;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+            rgba(190, 160, 110, 0.10),
+            transparent 70%);
+    pointer-events: none;
+    z-index: -1;
+}
+
+.fp-contact-container {
+    position: relative;
+    max-width: 1180px;
+    margin: 0 auto;
+}
+
+/* =========================================
+   HEADER
+========================================= */
+
+.fp-contact-header {
+    max-width: 750px;
+    margin: 0 auto 65px;
+    text-align: center;
+}
+
+.fp-contact-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 17px;
+    margin-bottom: 25px;
+
+    border: 1px solid #e6dfd2;
+    border-radius: 50px;
+
+    background: #ffffff;
+    color: #8a7049;
+
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+
+.fp-contact-badge-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #b18a50;
+}
+
+.fp-contact-header h2 {
+    margin: 0;
+    color: #171717;
+
+    font-size: clamp(34px, 5vw, 54px);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -1.8px;
+}
+
+.fp-contact-description {
+    max-width: 650px;
+    margin: 22px auto 0;
+
+    color: #737373;
+    font-size: 16px;
+    line-height: 1.8;
+}
+
+/* =========================================
+   CONTACT CARDS
+========================================= */
+
+.fp-contact-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+}
+
+.fp-contact-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+
+    min-height: 270px;
+    padding: 34px 30px;
+
+    background: #ffffff;
+    border: 1px solid #eae7e0;
+    border-radius: 18px;
+
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.025);
+
+    transition:
+        transform 0.3s ease,
+        box-shadow 0.3s ease,
+        border-color 0.3s ease;
+}
+
+.fp-contact-card:hover {
+    transform: translateY(-6px);
+    border-color: #d9c7a8;
+
+    box-shadow:
+        0 15px 35px rgba(0, 0, 0, 0.06);
+}
+
+/* =========================================
+   ICONS
+========================================= */
+
+.fp-contact-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 58px;
+    height: 58px;
+    margin-bottom: 26px;
+
+    border-radius: 15px;
+
+    background: #f5f1e9;
+    color: #9b7746;
+
+    transition:
+        background 0.3s ease,
+        color 0.3s ease,
+        transform 0.3s ease;
+}
+
+.fp-contact-card:hover .fp-contact-icon {
+    background: #9b7746;
+    color: #ffffff;
+    transform: scale(1.05);
+}
+
+/* =========================================
+   CARD TEXT
+========================================= */
+
+.fp-contact-card h3 {
+    margin: 0 0 12px;
+
+    color: #202020;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+}
+
+.fp-contact-card-description {
+    margin: 0 0 24px;
+
+    color: #777777;
+    font-size: 14px;
+    line-height: 1.8;
+}
+
+/* =========================================
+   CONTACT LINKS
+========================================= */
+
+.fp-contact-detail {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+
+    margin-top: auto;
+
+    color: #987344;
+    font-size: 14px;
+    font-weight: 700;
+
+    text-decoration: none;
+
+    transition:
+        color 0.2s ease,
+        gap 0.2s ease;
+}
+
+a.fp-contact-detail:hover {
+    color: #604522;
+    gap: 13px;
+}
+
+/* =========================================
+   FOOTER
+========================================= */
+
+.fp-contact-footer {
+    max-width: 800px;
+    margin: 55px auto 0;
+    padding: 25px 30px;
+
+    border-top: 1px solid #e5e1d9;
+
+    color: #858585;
+    font-size: 13px;
+    line-height: 1.8;
+    text-align: center;
+}
+
+/* =========================================
+   TABLET
+========================================= */
+
+@media (max-width: 900px) {
+    .fp-contact {
+        padding: 85px 25px 75px;
+    }
+
+    .fp-contact-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .fp-contact-card:last-child {
+        grid-column: 1 / -1;
+    }
+}
+
+/* =========================================
+   MOBILE
+========================================= */
+
+@media (max-width: 600px) {
+    .fp-contact {
+        padding: 70px 18px 60px;
+    }
+
+    .fp-contact-header {
+        margin-bottom: 40px;
+    }
+
+    .fp-contact-header h2 {
+        font-size: 34px;
+        letter-spacing: -1px;
+    }
+
+    .fp-contact-description {
+        font-size: 14px;
+    }
+
+    .fp-contact-grid {
+        grid-template-columns: 1fr;
+        gap: 17px;
+    }
+
+    .fp-contact-card {
+        min-height: 245px;
+        padding: 27px 24px;
+    }
+
+    .fp-contact-card:last-child {
+        grid-column: auto;
+    }
+
+    .fp-contact-footer {
+        margin-top: 35px;
+        padding: 22px 10px;
+    }
+}
+
+/* Accessibility */
+
+@media (prefers-reduced-motion: reduce) {
+
+    .fp-contact-card,
+    .fp-contact-icon,
+    .fp-contact-detail {
+        transition: none;
+    }
+
+    .fp-contact-card:hover {
+        transform: none;
+    }
+}

@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NewShipmentModal } from './components/NewShipmentModal';
 import { PayPalCheckout } from './components/PayPalCheckout';
-import HeroScene from './components/HeroScene';
-import Breadcrumbs from './components/Breadcrumbs';
 import { SvgDonutChart, SvgAreaChart, SvgRiskGauge, SvgBarComparison } from './components/SvgCharts';
+import Contact5Section from './components/Contact5';
+import { FreightWorkspaceShell, type WorkspacePage } from './components/workspace/FreightWorkspaceShell';
+import { FreightOverview } from './components/workspace/FreightOverview';
+import { ThemeToggleButton } from './components/workspace/ThemeToggleButton';
+import { FamilyReceiveComponent } from './components/ui/FamilyReceiveComponent';
+import { AiCopilotChat } from './components/ai/AiCopilotChat';
 import {
   addTrackingEvent, apiBaseUrl, assessQuote, cancelShipment, compareQuotesWithCopilot,
   createShipment, fetchAnalyticsOverview, fetchCarrierCatalog, fetchCarrierPerformance,
@@ -19,19 +23,6 @@ import {
 
 type Page = 'landing' | 'overview' | 'shipments' | 'quotes' | 'payments' | 'copilot' | 'risk' | 'analytics' | 'carriers' | 'documents' | 'settings';
 type IconName = 'overview' | 'shipments' | 'quotes' | 'risk' | 'copilot' | 'payments' | 'analytics' | 'settings' | 'bell' | 'plus' | 'search' | 'arrow' | 'refresh' | 'clock' | 'check' | 'warning' | 'external' | 'menu' | 'logout' | 'shield' | 'truck' | 'wallet' | 'spark' | 'calendar' | 'filter' | 'close' | 'route' | 'file' | 'database' | 'activity' | 'chevron';
-
-const NAV_ITEMS: Array<{ id: Page; label: string; icon: IconName; group: string }> = [
-  { id: 'overview', label: 'Dashboard', icon: 'overview', group: 'MAIN' },
-  { id: 'shipments', label: 'Shipments', icon: 'shipments', group: 'MAIN' },
-  { id: 'quotes', label: 'Get Quotes', icon: 'quotes', group: 'MAIN' },
-  { id: 'payments', label: 'Payments', icon: 'payments', group: 'MAIN' },
-  { id: 'copilot', label: 'AI Copilot', icon: 'copilot', group: 'MAIN' },
-  { id: 'risk', label: 'Risk Engine', icon: 'risk', group: 'MAIN' },
-  { id: 'analytics', label: 'Analytics', icon: 'analytics', group: 'MAIN' },
-  { id: 'carriers', label: 'Carriers', icon: 'truck', group: 'MAIN' },
-  { id: 'documents', label: 'Documents', icon: 'file', group: 'MAIN' },
-  { id: 'settings', label: 'Settings', icon: 'settings', group: 'MAIN' },
-];
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }): React.ReactElement {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true as const };
@@ -124,8 +115,36 @@ function createAuthNonce(): string {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
 }
 
-function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void }): React.ReactElement {
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
+function GoogleBrandIcon(): React.ReactElement {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 48 48" width="20" height="20" focusable="false">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.91c-.58 2.96-2.25 5.47-4.72 7.16l7.62 5.91c4.45-4.11 7.17-10.16 7.17-17.54Z"/>
+      <path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19Z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.91l-7.62-5.91c-2.12 1.44-4.84 2.29-8.28 2.29-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/>
+    </svg>
+  );
+}
+
+function AppleBrandIcon(): React.ReactElement {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" focusable="false">
+      <path fill="currentColor" d="M16.37 12.1c.02 2.18 1.91 2.9 1.93 2.91-.02.05-.3 1.04-1 2.06-.6.88-1.22 1.76-2.2 1.78-.96.02-1.27-.57-2.37-.57s-1.45.55-2.34.59c-.94.03-1.65-.95-2.25-1.83-1.23-1.78-2.17-5.02-.91-7.22a3.47 3.47 0 0 1 2.94-1.81c.92-.02 1.79.62 2.36.62.56 0 1.58-.76 2.67-.65.46.02 1.73.19 2.55 1.38-.07.04-1.52.89-1.38 2.74ZM14.62 6.3c.5-.6.83-1.43.74-2.26-.72.03-1.58.48-2.1 1.08-.46.53-.85 1.37-.74 2.17.79.06 1.61-.4 2.1-.99Z"/>
+    </svg>
+  );
+}
+
+function PhoneBrandIcon(): React.ReactElement {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+      <rect x="6.5" y="2" width="11" height="20" rx="2.2" />
+      <path d="M10 5h4M11 18.5h2" />
+    </svg>
+  );
+}
+
+function AuthModal({ onClose, onAuthenticated, initialMode = 'login' }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void; initialMode?: 'login' | 'register' }): React.ReactElement {
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
   const [method, setMethod] = useState<'password' | 'phone'>('password');
   const [role, setRole] = useState<'BUYER' | 'SELLER'>('BUYER');
   const [email, setEmail] = useState('');
@@ -294,8 +313,8 @@ function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthen
     }
   };
 
-  return <div className="modal-backdrop auth-backdrop" onMouseDown={onClose}>
-    <div className="auth-split-card" onMouseDown={(event) => event.stopPropagation()}>
+  return <div className="modal-backdrop auth-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="auth-split-card" role="dialog" aria-modal="true" aria-label={mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : 'Reset password'} onMouseDown={(event) => event.stopPropagation()}>
 
       {/* Left Brand Panel */}
       <div className="auth-split-left">
@@ -322,6 +341,7 @@ function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthen
 
       {/* Right Form Panel */}
       <div className="auth-split-right">
+        <div className="auth-form-brand" aria-label="FreightPilot">FREIGHT<span>PILOT</span></div>
         <button className="auth-close-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={16}/></button>
 
         <div className="auth-toggle-pill">
@@ -337,12 +357,9 @@ function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthen
         {mode === 'forgot' && (
           <form onSubmit={(e) => {
             e.preventDefault();
-            setBusy(true);
+            setBusy(false);
             setError(null);
-            setTimeout(() => {
-              setBusy(false);
-              setSuccessMsg(`If an account exists for ${email}, a password reset link has been dispatched.`);
-            }, 600);
+            setSuccessMsg('Password reset is not enabled by the current backend API. Please contact your platform administrator.');
           }} className="form-stack auth-fields">
             <div className="auth-input-group">
               <span className="input-icon-slot"><Icon name="external" size={15}/></span>
@@ -362,13 +379,13 @@ function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthen
 
         {mode === 'login' && method === 'password' && <div className="auth-social-stack">
           <div className="google-signin-slot">
-            {googleClientId ? <div ref={googleButtonRef} className="google-signin-button"/> : <button type="button" className="btn-social" disabled><span className="social-symbol social-google">G</span>Continue with Google</button>}
+            {googleClientId ? <div ref={googleButtonRef} className="google-signin-button"/> : <button type="button" className="btn-social" disabled><span className="social-symbol social-google"><GoogleBrandIcon /></span>Continue with Google</button>}
           </div>
           <button type="button" className="btn-social" onClick={() => void signInWithApple()} disabled={busy || !appleClientId || !appleRedirectUri}>
-            <span className="social-symbol social-apple">🍎</span>Continue with Apple
+            <span className="social-symbol social-apple"><AppleBrandIcon /></span>Continue with Apple
           </button>
           <button type="button" className="btn-social" onClick={() => { setMethod('phone'); setError(null); }}>
-            <span className="social-symbol social-phone">📱</span>Continue with Phone (OTP)
+            <span className="social-symbol social-phone"><PhoneBrandIcon /></span>Continue with Phone (OTP)
           </button>
           {(!googleClientId || !appleClientId) && <div className="auth-provider-note">Enable Google and Apple by adding their public client IDs to frontend/.env.local.</div>}
         </div>}
@@ -433,13 +450,6 @@ export default function App(): React.ReactElement {
     window.history.pushState({ freightPilotPage: nextPage }, '', nextUrl);
     setPageState(nextPage);
   }, []);
-  const goBack = useCallback(() => {
-    if (pageHistory.current.length > 0) {
-      window.history.back();
-    } else {
-      setPage(pageRef.current === 'overview' ? 'landing' : 'overview');
-    }
-  }, [setPage]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [activeShipment, setActiveShipment] = useState<Shipment | null>(null);
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -461,16 +471,35 @@ export default function App(): React.ReactElement {
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [newShipmentOpen, setNewShipmentOpen] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
+  const initialAuthRoute = (() => {
+    const pathname = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    if (pathname.endsWith('/register') || hash === 'register') return 'register' as const;
+    if (pathname.endsWith('/login') || hash === 'login') return 'login' as const;
+    return null;
+  })();
+  const [authOpen, setAuthOpen] = useState(() => initialAuthRoute !== null);
+  const [authInitialMode, setAuthInitialMode] = useState<'login' | 'register'>(initialAuthRoute ?? 'login');
+  const openAuth = (mode: 'login' | 'register' = 'login') => {
+    setAuthInitialMode(mode);
+    setAuthOpen(true);
+    const authPath = mode === 'register' ? '/register' : '/login';
+    if (window.location.pathname !== authPath) window.history.pushState({ auth: mode }, '', authPath);
+  };
+  const closeAuth = () => {
+    setAuthOpen(false);
+    if (/\/(login|register)\/?$/i.test(window.location.pathname) || /^(login|register)$/i.test(window.location.hash.replace(/^#/, ''))) {
+      window.history.replaceState({ freightPilotPage: 'landing' }, '', '/');
+      pageRef.current = 'landing';
+      setPageState('landing');
+    }
+  };
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [accountPhone, setAccountPhone] = useState('');
   const [accountPhoneOtp, setAccountPhoneOtp] = useState('');
   const [accountPhoneOtpSent, setAccountPhoneOtpSent] = useState(false);
   const [phoneSettingsBusy, setPhoneSettingsBusy] = useState(false);
   const [phoneSettingsMessage, setPhoneSettingsMessage] = useState('');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const [health, setHealth] = useState<{ status: string; service: string } | null>(null);
   const [search, setSearch] = useState('');
   const [trackingStatus, setTrackingStatus] = useState('IN_TRANSIT');
@@ -564,7 +593,6 @@ export default function App(): React.ReactElement {
     fetchCurrentUser().then((user) => { setCurrentUser(user); setAccountPhone(user.phone_number || ''); }).catch(() => { setAuthToken(null); setCurrentUser(null); });
   }, []);
 
-  const unreadCount = notifications.filter((notification) => !notification.read_at).length;
   const filteredShipments = useMemo(() => shipments.filter((shipment) => `${shipment.id} ${shipment.cargo_type} ${shipment.origin} ${shipment.destination} ${shipment.status}`.toLowerCase().includes(search.toLowerCase())), [shipments, search]);
   const totalQuoteCount = analytics?.quote_count ?? shipments.reduce((sum, shipment) => sum + (shipment.quotes_count || 0), 0);
   const capturedSpend = analytics?.captured_spend_by_currency || [];
@@ -649,9 +677,13 @@ export default function App(): React.ReactElement {
     setAccountPhoneOtpSent(false);
     setPhoneSettingsMessage('');
     setAuthOpen(false);
+    if (/\/(login|register)\/?$/i.test(window.location.pathname)) {
+      window.history.replaceState({ freightPilotPage: 'landing' }, '', '/');
+    }
+    setPage('overview');
     showToast(`Signed in as ${user.email}.`);
     void loadPortfolio();
-  }, [loadPortfolio, showToast]);
+  }, [loadPortfolio, setPage, showToast]);
 
   const saveAccountPhone = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -723,7 +755,7 @@ export default function App(): React.ReactElement {
     quotes: { title: 'Get Quotes', subtitle: 'Compare carrier offers using normalized cost, transit and risk data.' },
     payments: { title: 'Payments', subtitle: 'Review payment activity and complete Sandbox checkout for a selected quote.' },
     copilot: { title: 'AI Copilot', subtitle: 'Your AI logistics assistant, powered by Gemini.' },
-    risk: { title: 'Risk Engine', subtitle: 'AI-powered risk detection and mitigation for your shipments.' },
+    risk: { title: 'Risk Engine', subtitle: 'Explainable rule-based assessment of carrier, route and quote risk.' },
     analytics: { title: 'Analytics', subtitle: 'Operational insights and performance trends.' },
     carriers: { title: 'Carriers', subtitle: 'Browse and compare freight carrier catalog and performance.' },
     documents: { title: 'Documents', subtitle: 'Manage shipment documents, bills of lading and customs paperwork.' },
@@ -731,86 +763,32 @@ export default function App(): React.ReactElement {
   };
 
   const currentPage = pageMeta[page];
-  const topHeader = <header className="topbar">
-    <div className="topbar-leading">
-      <button className="mobile-menu-trigger" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="Toggle navigation menu" title="Navigation menu"><Icon name="menu" size={18} /></button>
-      <button className="back-button" onClick={goBack} aria-label="Go back" title="Go back"><Icon name="arrow" size={16} /></button>
-      <div className="topbar-mobile-brand"><div className="brand-mark">FP</div><span>FreightPilot <b>AI</b></span></div>
-    </div>
-    <div className="topbar-search">
-      <Icon name="search" size={16} />
-      <input type="search" placeholder="Search shipments, quotes, payments..." aria-label="Search" />
-    </div>
-    <div className="topbar-actions">
-      <div className="notification-bell" onClick={() => setShowNotifications(!showNotifications)} aria-label="Notifications" role="button" tabIndex={0}>
-        <Icon name="bell" size={18} />
-        {unreadCount > 0 && <span className="notification-dot" />}
-        {showNotifications && (
-          <div className="notifications-dropdown" onClick={(e) => e.stopPropagation()}>
-            <div className="notifications-dropdown-header">
-              <strong>Operational Alerts</strong>
-              <span className="subtle-count">{notifications.length}</span>
-            </div>
-            {notifications.length === 0 ? (
-              <div className="empty-inline">
-                <span>No active alerts</span>
-              </div>
-            ) : (
-              <div className="notifications-list">
-                {notifications.slice(0, 5).map((n) => (
-                  <div className={`notification-item ${n.read_at ? 'read' : 'unread'}`} key={n.id}>
-                    <div className="notification-item-icon"><Icon name="bell" size={14} /></div>
-                    <div className="notification-item-content">
-                      <strong>{n.title}</strong>
-                      <p>{n.message}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="user-menu">
-        <button className="user-avatar" onClick={() => setShowUserMenu(!showUserMenu)} aria-label="User menu">
-          <span className="avatar-placeholder">{currentUser ? currentUser.email.slice(0, 1).toUpperCase() : 'G'}</span>
-          <span className="user-name">{currentUser ? currentUser.email.split('@')[0] : 'Guest user'}</span>
-          <Icon name="chevron" size={14} />
-        </button>
-        {showUserMenu && (
-          <div className="user-menu-dropdown">
-            <button className="user-menu-item" onClick={() => { setPage('settings'); setShowUserMenu(false); }}>
-              <Icon name="settings" size={16} /> Settings
-            </button>
-            <button className="user-menu-item" onClick={() => { setPage('landing'); setShowUserMenu(false); }}>
-              <Icon name="overview" size={16} /> Public site
-            </button>
-            <hr className="user-menu-divider" />
-            <button className="user-menu-item danger" onClick={() => { setShowUserMenu(false); if (currentUser) { setAuthToken(null); setCurrentUser(null); showToast('Signed out.'); void loadPortfolio(); } else { setAuthOpen(true); } }}>
-              <Icon name="logout" size={16} /> {currentUser ? 'Sign out' : 'Sign in'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  </header>;
-
 
   const renderLanding = () => <div className="landing-page">
-    <section className="landing-hero">
+    <section className="landing-hero" id="home">
       <nav className="landing-nav">
         <button className="landing-brand" onClick={() => setPage('landing')} aria-label="FreightPilot AI home">
           <span className="brand-mark">FP</span>
           <span className="landing-brand-copy"><strong>FreightPilot <i>AI</i></strong><small>GLOBAL LOGISTICS INTELLIGENCE</small></span>
         </button>
         <div className="landing-nav-links">
+          <a href="#home">Home</a>
           <a href="#features">Capabilities</a>
           <a href="#workflow">How it works</a>
-          <button onClick={() => setPage('overview')}>Workspace</button>
+          <a href="#contact">Contact</a>
         </div>
         <div className="landing-nav-actions">
-          <button className="landing-signin" onClick={() => setAuthOpen(true)}>Sign in</button>
-          <button className="btn btn-coral" onClick={() => setPage('overview')}>Get started <Icon name="arrow" size={15}/></button>
+          <ThemeToggleButton compact />
+          <FamilyReceiveComponent
+            triggerLabel="Workspace"
+            title="Open your workspace?"
+            description="Continue to your logistics workspace to manage shipments, compare carrier quotes and review payments."
+            confirmLabel="Continue"
+            cancelLabel="Stay here"
+            onConfirm={() => { if (currentUser) setPage('overview'); else openAuth('login'); }}
+          />
+          <button className="landing-signin" onClick={() => openAuth('login')}>Sign in</button>
+          <button className="btn btn-coral" onClick={() => openAuth('register')}>Create account <Icon name="arrow" size={15}/></button>
         </div>
       </nav>
 
@@ -818,20 +796,35 @@ export default function App(): React.ReactElement {
         <div className="landing-content">
           <div className="landing-badge"><span className="badge-pulse"/><Icon name="spark" size={14}/> MARITIME LOGISTICS INTELLIGENCE</div>
           <h1 className="landing-title">Navigate Freight. <span className="hero-coral">Move Smarter.</span></h1>
-          <p className="landing-subtitle">Plan shipments, compare verified carrier quotes and evaluate operational risk in one connected workspace engineered for confident maritime procurement decisions.</p>
+          <p className="landing-subtitle">Plan shipments, compare carrier quotes and evaluate operational risk in one connected workspace engineered for confident maritime procurement decisions.</p>
           <div className="landing-cta-group">
-            <button className="btn btn-coral" onClick={() => setPage('overview')}>Get started <Icon name="arrow" size={16}/></button>
-            <button className="btn btn-glass-hero" onClick={() => setAuthOpen(true)}>Sign in</button>
+            <button className="btn btn-coral" onClick={() => openAuth('register')}>Get started <Icon name="arrow" size={16}/></button>
+            <button className="btn btn-glass-hero" onClick={() => openAuth('login')}>Sign in</button>
           </div>
           <div className="landing-proof-row">
-            <span><i className="proof-check"><Icon name="check" size={12}/></i> Real-time shipment visibility</span>
+            <span><i className="proof-check"><Icon name="check" size={12}/></i> Shipment status visibility</span>
             <span><i className="proof-check"><Icon name="check" size={12}/></i> Explainable risk review</span>
             <span><i className="proof-check"><Icon name="check" size={12}/></i> Secure PayPal Sandbox checkout</span>
           </div>
         </div>
 
-        <div className="landing-hero-scene-wrap">
-          <HeroScene />
+        <div className="landing-hero-scene-wrap" aria-label="Yacht moving across open water">
+          <div className="landing-hero-video-frame">
+            <video
+              className="landing-hero-video"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              poster="/images/yacht-poster.png"
+              aria-label="A yacht cruising across open ocean with moving water"
+            >
+              <source src="/videos/yacht-motion.mp4" type="video/mp4" />
+            </video>
+            <div className="landing-hero-video-shade" aria-hidden="true" />
+            <div className="landing-hero-video-caption"><span className="hero-live-dot" /> LIVE OCEAN VISUAL</div>
+          </div>
         </div>
       </div>
 
@@ -841,90 +834,9 @@ export default function App(): React.ReactElement {
       </div>
     </section>
 
-    {/* Restrained Statistics Section */}
-    <section className="landing-stats-section">
-      <div className="stats-container">
-        <div className="stats-metric-card">
-          <strong>$42.8M</strong>
-          <span>Freight volume analyzed*</span>
-        </div>
-        <div className="stats-metric-card">
-          <strong>99.4%</strong>
-          <span>On-time route reliability*</span>
-        </div>
-        <div className="stats-metric-card">
-          <strong>450+</strong>
-          <span>Verified carrier networks*</span>
-        </div>
-        <div className="stats-metric-card">
-          <strong>&lt; 1.8s</strong>
-          <span>Decision signal latency*</span>
-        </div>
-      </div>
-      <div className="stats-disclaimer">
-        * Platform benchmarks &amp; demonstration figures. Stored records reflect active database state.
-      </div>
-    </section>
-
-    {/* Four Refined Feature Sections */}
-    <section className="landing-capabilities" id="features">
-      <div className="landing-section-heading">
-        <div><span className="eyebrow">ENTERPRISE CAPABILITIES</span><h2>Precision at every <em>decision point.</em></h2></div>
-        <p>A unified maritime intelligence platform bridging operational tracking, carrier quote evaluation, predictive risk analysis, and secure settlement.</p>
-      </div>
-      <div className="landing-features-grid">
-        <article className="feature-card feature-card-highlight">
-          <div className="feature-card-top">
-            <span className="feature-index">01 / INTELLIGENCE</span>
-            <div className="panel-icon"><Icon name="spark" size={20}/></div>
-          </div>
-          <h3>AI Copilot</h3>
-          <p>Transforms complex carrier filings, transit benchmarks, and route constraints into clear procurement recommendations. Highlights advantages, flags hidden concerns, and surfaces missing information before commitments.</p>
-          <div className="feature-card-action">
-            <button className="bento-link" onClick={() => setPage('copilot')}>Explore Copilot <Icon name="arrow" size={14}/></button>
-          </div>
-        </article>
-
-        <article className="feature-card">
-          <div className="feature-card-top">
-            <span className="feature-index">02 / DECISION SUPPORT</span>
-            <div className="panel-icon"><Icon name="shield" size={20}/></div>
-          </div>
-          <h3>Risk Management</h3>
-          <p>Deterministic, rule-based risk evaluation calculating composite scores from transit variance, pricing anomalies, and carrier reliability. Evidence-backed flags explain exactly why an offer requires human attention.</p>
-          <div className="feature-card-action">
-            <button className="bento-link" onClick={() => setPage('risk')}>Review risk signals <Icon name="arrow" size={14}/></button>
-          </div>
-        </article>
-
-        <article className="feature-card">
-          <div className="feature-card-top">
-            <span className="feature-index">03 / SETTLEMENT</span>
-            <div className="panel-icon"><Icon name="wallet" size={20}/></div>
-          </div>
-          <h3>Secure Payments</h3>
-          <p>Integrated PayPal Sandbox checkout confirming capture directly with the FastAPI backend. Saved quote totals remain tamper-proof with clear audit trails across all major currencies.</p>
-          <div className="feature-card-action">
-            <button className="bento-link" onClick={() => setPage('payments')}>View payments <Icon name="arrow" size={14}/></button>
-          </div>
-        </article>
-
-        <article className="feature-card">
-          <div className="feature-card-top">
-            <span className="feature-index">04 / OPERATIONS</span>
-            <div className="panel-icon"><Icon name="shipments" size={20}/></div>
-          </div>
-          <h3>Real-time Tracking</h3>
-          <p>End-to-end visibility across your maritime portfolio. Track milestone events, cargo condition, port departure, and delivery ETA with clear status badges and automated state synchronization.</p>
-          <div className="feature-card-action">
-            <button className="bento-link" onClick={() => setPage('shipments')}>Track shipments <Icon name="arrow" size={14}/></button>
-          </div>
-        </article>
-      </div>
-    </section>
-
     <section className="landing-workflow" id="workflow">
-      <div className="workflow-copy"><span className="eyebrow">A CLEARER PROCUREMENT WORKFLOW</span><h2>See the whole journey.<br/><em>Choose with context.</em></h2><p>FreightPilot brings the core information together so teams can evaluate options, understand risk and track what has been confirmed—without confusing estimated data with live carrier feeds.</p><button className="btn btn-coral" onClick={() => setPage('overview')}>Enter platform <Icon name="arrow" size={15}/></button></div>
+      <span id="features" className="landing-anchor" aria-hidden="true"/>
+      <div className="workflow-copy"><span className="eyebrow">A CLEARER PROCUREMENT WORKFLOW</span><h2>See the whole journey.<br/><em>Choose with context.</em></h2><p>FreightPilot brings the core information together so teams can evaluate options, understand risk and track what has been confirmed—without confusing estimated data with live carrier feeds.</p><button className="btn btn-coral" onClick={() => openAuth('register')}>Enter platform <Icon name="arrow" size={15}/></button></div>
       <div className="workflow-steps">
         <div className="workflow-step"><span>01</span><div><strong>Describe the shipment</strong><small>Capture cargo, route, dates and currency.</small></div></div>
         <div className="workflow-step"><span>02</span><div><strong>Compare available offers</strong><small>Review stored quote totals, terms and context.</small></div></div>
@@ -932,59 +844,23 @@ export default function App(): React.ReactElement {
         <div className="workflow-step"><span>04</span><div><strong>Track confirmed outcomes</strong><small>Follow shipment events and backend-confirmed payment status.</small></div></div>
       </div>
     </section>
+
+    <div id="contact"><Contact5Section /></div>
     <footer className="landing-footer"><div className="landing-brand"><span className="brand-mark">FP</span><span className="landing-brand-copy"><strong>FreightPilot <i>AI</i></strong><small>GLOBAL LOGISTICS INTELLIGENCE</small></span></div><p>Clearer freight decisions, from first request to final confirmation.</p><span>© {new Date().getFullYear()} FreightPilot AI</span></footer>
   </div>;
 
-  const renderOverview = () => {
-    const totalSpend = capturedSpend.length > 0 ? capturedSpend[0].amount : 248320;
-    const totalSpendCurrency = capturedSpend.length > 0 ? capturedSpend[0].currency : 'USD';
-    const shipmentCount = analytics?.shipment_count ?? shipments.length;
-    const onTimeRate = analytics?.delivered_shipments && analytics?.shipment_count ? Math.round((analytics.delivered_shipments / analytics.shipment_count) * 100 * 10) / 10 : 94.7;
-    const riskAlerts = analytics?.high_attention_quotes ?? 23;
-    return <>
-      <div className="welcome-row">
-        <div>
-          <div className="eyebrow">DASHBOARD OVERVIEW · {new Intl.DateTimeFormat('en', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date()).toUpperCase()}</div>
-          <h2 style={{margin:'4px 0 6px',fontSize:24,fontWeight:800,color:'#FFFFFF'}}>Dashboard Overview</h2>
-          <p style={{margin:0,fontSize:13,color:'var(--text-secondary)'}}>Here's what's happening with your logistics today.</p>
-        </div>
-        <div style={{display:'flex',gap:12,alignItems:'center'}}>
-          <span className="date-filter-pill"><Icon name="calendar" size={14}/> Last 30 Days ▾</span>
-          <button className="btn btn-primary" onClick={() => setNewShipmentOpen(true)}><Icon name="plus" size={17}/> New Shipment</button>
-        </div>
-      </div>
-      <div className="stats-grid">
-        <StatCard label="Total Shipments" value={shipmentCount} caption={`+12% vs last month`} icon="shipments" tint="icon-blue"/>
-        <StatCard label="Total Spend" value={money(totalSpend, totalSpendCurrency)} caption={`+8.4% captured`} icon="wallet" tint="icon-green"/>
-        <StatCard label="On-Time Delivery" value={`${onTimeRate}%`} caption={`+2.1% improvement`} icon="check" tint="icon-green"/>
-        <StatCard label="Risk Alerts" value={riskAlerts} caption={`-31% resolved`} icon="warning" tint="icon-red"/>
-      </div>
-      <div className="dashboard-grid">
-        <section className="panel panel-main">
-          <div className="panel-header"><div><span className="eyebrow">SHIPMENT VOLUME</span><h3>Shipment Volume</h3></div><span className="date-filter-pill" style={{fontSize:11}}><Icon name="calendar" size={12}/> Monthly</span></div>
-          <SvgAreaChart />
-        </section>
-        <section className="panel">
-          <div className="panel-header"><div><span className="eyebrow">TRANSPORT MIX</span><h3>Shipments by Mode</h3></div></div>
-          <SvgDonutChart counts={analytics?.shipment_status_counts || {'Sea':52,'Air':24,'Road':16,'Rail':8}} total={analytics?.shipment_count || 128}/>
-        </section>
-      </div>
-      <div className="dashboard-grid">
-        <section className="panel table-panel">
-          <div className="panel-header"><div><span className="eyebrow">PORTFOLIO</span><h3>Recent Shipments</h3></div><button className="link-button" onClick={() => setPage('shipments')}>View All <Icon name="arrow" size={15}/></button></div>
-          {shipments.length === 0 ? <EmptyState title="No shipments yet" description="Create a shipment request to start comparing freight offers." action={<button className="btn btn-primary" onClick={() => setNewShipmentOpen(true)}>Create shipment</button>}/> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Shipment ID</th><th>Route</th><th>Mode</th><th>Status</th><th>ETA</th><th>Risk</th></tr></thead><tbody>{shipments.slice(0, 5).map((shipment) => <tr key={shipment.id} onClick={() => { void selectShipment(shipment.id); setPage('shipments'); }} className="clickable-row"><td><strong className="mono" style={{fontSize:12}}>{shipment.id.slice(0, 10)}</strong></td><td><span style={{fontSize:12}}>{shipment.origin} → {shipment.destination}</span></td><td><span style={{fontSize:11,color:'var(--text-secondary)'}}>{shipment.cargo_type}</span></td><td><StatusBadge value={shipment.status}/></td><td style={{fontSize:12}}>{shortDate(shipment.required_arrival_date)}</td><td><span className="risk-badge low">Low</span></td></tr>)}</tbody></table></div>}
-        </section>
-        <section className="copilot-promo-card">
-          <div>
-            <div className="copilot-promo-header"><Icon name="spark" size={18}/> AI Copilot</div>
-            <h4>Ask anything about<br/>shipments, rates or<br/>documentation</h4>
-          </div>
-          <button className="btn-copilot-gradient" onClick={() => setPage('copilot')}><Icon name="spark" size={15}/> Chat with AI →</button>
-        </section>
-      </div>
-      <div className="source-note"><Icon name="shield" size={15}/> Data on this dashboard is read from the backend database. Synthetic demo quotes are labeled at quote level and are not live carrier offers.</div>
-    </>;
-  };
+  const renderOverview = () => (
+    <FreightOverview
+      analytics={analytics}
+      shipments={shipments}
+      payments={payments}
+      quotes={quotes}
+      loading={loading}
+      onNavigate={(nextPage) => setPage(nextPage)}
+      onCreateShipment={() => setNewShipmentOpen(true)}
+      onSelectShipment={(shipment) => { void selectShipment(shipment.id); setPage('shipments'); }}
+    />
+  );
 
   const renderShipments = () => <>
     <div className="toolbar-row"><div className="search-box"><Icon name="search" size={17}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search shipments, route or status…"/></div><button className="btn btn-primary" onClick={() => setNewShipmentOpen(true)}><Icon name="plus" size={16}/> New shipment</button></div>
@@ -1031,6 +907,7 @@ export default function App(): React.ReactElement {
     <div className="copilot-intro"><div className="copilot-orb"><Icon name="spark" size={30}/></div><div><span className="eyebrow">FREIGHTPILOT INTELLIGENCE</span><h3>Make your next freight decision with evidence.</h3><p>Copilot compares selected quote records and returns advantages, concerns, missing information and follow-up questions.</p></div></div>
     <div className="copilot-layout"><section className="panel copilot-selection"><div className="panel-header"><div><span className="eyebrow">ANALYSIS INPUT</span><h3>Select quote offers</h3><p>{activeShipment ? routeName(activeShipment) : 'Choose a shipment first.'}</p></div><select value={activeShipment?.id || ''} onChange={(event) => void selectShipment(event.target.value)} disabled={!shipments.length}>{shipments.map((shipment) => <option key={shipment.id} value={shipment.id}>{shipment.cargo_type}</option>)}</select></div>{quotes.length ? <div className="copilot-quote-options">{quotes.map((quote) => <label key={quote.id} className="copilot-quote-option"><input type="checkbox" checked={copilotQuoteIds.includes(quote.id)} onChange={(event) => setCopilotQuoteIds((ids) => event.target.checked ? [...ids, quote.id] : ids.filter((id) => id !== quote.id))}/><span className="option-carrier"><strong>{quote.provider_label}</strong><small>{quote.reference}</small></span><strong>{money(quote.total_amount, quote.currency)}</strong></label>)}</div> : <EmptyState title="No quote records" description="Create or select a shipment with quote offers before requesting analysis."/>}<button className="btn btn-primary btn-full" onClick={() => void handleRunCopilot()} disabled={copilotBusy || copilotQuoteIds.length === 0}><Icon name="spark" size={16}/>{copilotBusy ? 'Analyzing quote data…' : 'Analyze selected quotes'}</button><p className="fine-print">Analysis is read-only. Copilot cannot create shipments, commit payments or change operational status.</p></section>
       <section className="panel copilot-output"><div className="panel-header"><div><span className="eyebrow">DECISION BRIEF</span><h3>Procurement analysis</h3><p>Evidence-based summary from the backend.</p></div><div className="ai-tag"><Icon name="spark" size={13}/> AI / RULES</div></div>{!copilotResult ? <div className="copilot-placeholder"><div className="placeholder-art"><div/><div/><div/><Icon name="spark" size={23}/></div><strong>Your analysis will appear here</strong><span>Select one or more offers and run the copilot comparison.</span></div> : <div className="analysis-content"><div className="analysis-summary"><span className="eyebrow">SUMMARY</span><p>{copilotResult.summary}</p></div><div className="analysis-section"><h4>Quote-by-quote review</h4>{copilotResult.comparison.map((detail) => { const quote = quotes.find((item) => item.id === detail.quote_id); return <div className="comparison-detail" key={detail.quote_id}><strong>{quote?.provider_label || detail.quote_id}</strong><div className="pros-cons"><div><span className="positive-label">Advantages</span>{detail.advantages.length ? detail.advantages.map((text, i) => <p key={i}><Icon name="check" size={13}/>{text}</p>) : <p>None provided.</p>}</div><div><span className="negative-label">Concerns</span>{detail.concerns.length ? detail.concerns.map((text, i) => <p key={i}><Icon name="warning" size={13}/>{text}</p>) : <p>None provided.</p>}</div></div></div>; })}</div>{copilotResult.missing_information.length > 0 && <div className="analysis-section"><h4>Missing information</h4><ul>{copilotResult.missing_information.map((text, i) => <li key={i}>{text}</li>)}</ul></div>}{copilotResult.next_questions.length > 0 && <div className="analysis-section"><h4>Questions to resolve</h4><ul>{copilotResult.next_questions.map((text, i) => <li key={i}>{text}</li>)}</ul></div>}<p className="fine-print">{copilotResult.disclaimer}</p></div>}</section></div>
+    <AiCopilotChat shipmentId={activeShipment?.id} role={currentUser?.role} />
   </>;
 
   const renderPayments = () => <>
@@ -1038,22 +915,34 @@ export default function App(): React.ReactElement {
     <section className="panel table-panel"><div className="panel-header"><div><span className="eyebrow">TRANSACTION LEDGER</span><h3>Payment history <span className="subtle-count">{payments.length}</span></h3><p>Records are read from the payment tables for all visible shipments.</p></div><button className="btn btn-secondary btn-sm" onClick={() => void loadPayments(shipments)} disabled={paymentLoading}><Icon name="refresh" size={14}/>{paymentLoading ? 'Refreshing…' : 'Refresh'}</button></div>{paymentLoading ? <LoadingPanel label="Loading payment records…"/> : payments.length === 0 ? <EmptyState title="No payment transactions" description="A payment record appears here when a PayPal order has been created for a stored quote."/> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Transaction</th><th>Quote</th><th>Amount</th><th>Provider</th><th>Created</th><th>Status</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.payment_id}><td><strong className="mono">{payment.payment_id.slice(0, 12)}…</strong><span className="table-secondary">{payment.provider_order_id}</span></td><td className="mono">{payment.quote_id.slice(0, 14)}…</td><td><strong>{money(payment.amount, payment.currency)}</strong></td><td>PayPal {payment.provider.includes('sandbox') ? 'Sandbox' : ''}</td><td>{dateTime(payment.created_at)}</td><td><StatusBadge value={payment.status}/></td></tr>)}</tbody></table></div>}</section>
   </>;
 
-  const renderAnalytics = () => <>
+  const renderAnalytics = () => {
+    const now = new Date();
+    const activityPoints = Array.from({ length: 6 }, (_, index) => {
+      const month = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
+      const count = shipments.filter((shipment) => {
+        const created = new Date(shipment.created_at);
+        return !Number.isNaN(created.getTime()) && created.getFullYear() === month.getFullYear() && created.getMonth() === month.getMonth();
+      }).length;
+      return { label: new Intl.DateTimeFormat('en', { month: 'short' }).format(month), value: count };
+    });
+    const quoteCountsByCarrier = carrierPerformance.slice(0, 7).map((carrier) => ({ month: carrier.carrier.slice(0, 8), amount: carrier.quote_count }));
+    return <>
     <div className="stats-grid analytics-stats"><StatCard label="Shipment volume" value={analytics?.shipment_count ?? 0} caption="Total stored requests" icon="shipments" tint="tint-coral"/><StatCard label="Quote coverage" value={totalQuoteCount} caption="Offers across visible shipments" icon="quotes" tint="tint-cream"/><StatCard label="Captured transactions" value={analytics?.captured_payments ?? 0} caption={`Of ${analytics?.payment_attempts ?? 0} attempts`} icon="payments" tint="tint-coral"/><StatCard label="Risk attention" value={analytics?.high_attention_quotes ?? 0} caption="Risk assessments scoring for review" icon="risk" tint="tint-coral"/></div>
     <div className="dashboard-grid"><section className="panel"><div className="panel-header"><div><span className="eyebrow">OPERATIONAL MIX</span><h3>Shipment status breakdown</h3><p>Counts from the shipment table.</p></div></div><SvgDonutChart counts={analytics?.shipment_status_counts || {}} total={analytics?.shipment_count || 0}/></section><section className="panel"><div className="panel-header"><div><span className="eyebrow">FINANCIAL RECORDS</span><h3>Captured spend by currency</h3><p>Amounts are intentionally not summed across currencies.</p></div></div>{capturedSpend.length ? <div className="spend-list">{capturedSpend.map((spend) => <div className="spend-row" key={spend.currency}><div><span className="spend-currency">{spend.currency}</span><strong>{money(spend.amount, spend.currency)}</strong></div><span className="spend-caption">Verified captures</span></div>)}</div> : <div className="empty-inline"><strong>No captured spend</strong><span>Verified payment captures will be grouped here by currency.</span></div>}</section></div>
     <div className="dashboard-grid dashboard-grid-lower">
       <section className="panel">
-        <div className="panel-header"><div><span className="eyebrow">VOLUME TREND</span><h3>Shipment activity index</h3><p>Estimated multi-week volume timeline.</p></div></div>
-        <SvgAreaChart />
+        <div className="panel-header"><div><span className="eyebrow">VOLUME TREND</span><h3>Shipment creation by month</h3><p>Actual counts grouped by stored creation dates.</p></div></div>
+        <SvgAreaChart points={activityPoints} />
       </section>
       <section className="panel">
-        <div className="panel-header"><div><span className="eyebrow">CARRIER BENCHMARK</span><h3>Spend Trend</h3><p>Monthly spend trend from stored data.</p></div></div>
-        <SvgBarComparison items={carrierPerformance.slice(0, 7).map((c) => ({ month: c.carrier.slice(0, 3), amount: Math.round(Number(c.average_quote || 0)) }))} />
+        <div className="panel-header"><div><span className="eyebrow">CARRIER ACTIVITY</span><h3>Stored quote count</h3><p>Quote volumes by carrier; no cross-currency amounts are combined.</p></div></div>
+        <SvgBarComparison items={quoteCountsByCarrier} />
       </section>
     </div>
     <section className="panel table-panel"><div className="panel-header"><div><span className="eyebrow">CARRIER COMPARISON</span><h3>Quote activity by carrier</h3><p>Grouped from stored quotes. Synthetic demo offers may be included.</p></div></div><CarrierTable items={carrierPerformance}/></section>
     <div className="source-note"><Icon name="database" size={15}/> Data scope: {analytics?.data_scope || 'Unavailable'}. Analytics are calculated from persisted records; no cross-currency total is produced.</div>
   </>;
+  };
 
   const renderSettings = () => <>
     <section className="panel account-verification-panel">
@@ -1077,9 +966,9 @@ export default function App(): React.ReactElement {
         {currentUser.phone_verified && <p className="phone-verified-copy"><Icon name="check" size={15}/> Your mobile number is verified and cannot be changed from this screen.</p>}
         <p className="account-phone-help">Use E.164 format, including the country code. Codes expire after 10 minutes and are limited to five attempts. Local development codes are printed in the backend terminal when SMS_PROVIDER=console.</p>
         {phoneSettingsMessage && <div className="inline-alert phone-settings-message">{phoneSettingsMessage}</div>}
-      </> : <div className="empty-inline"><strong>Sign in to manage account verification</strong><button className="text-button" onClick={() => setAuthOpen(true)}>Open sign in</button></div>}
+      </> : <div className="empty-inline"><strong>Sign in to manage account verification</strong><button className="text-button" onClick={() => openAuth('login')}>Open sign in</button></div>}
     </section>
-    <section className="panel settings-panel"><div className="panel-header"><div><span className="eyebrow">SERVICE HEALTH</span><h3>Connected services</h3><p>Configuration visibility only; secrets are never shown in the browser.</p></div></div><div className="settings-list"><SettingRow icon="activity" title="FastAPI backend" detail={apiBaseUrl} value={health?.status === 'healthy' ? 'Connected' : 'Unavailable'} good={health?.status === 'healthy'}/><SettingRow icon="database" title="Database" detail="SQLite / SQLAlchemy configured by backend" value={health?.status === 'healthy' ? 'Available' : 'Unknown'} good={health?.status === 'healthy'}/><SettingRow icon="wallet" title="PayPal JavaScript SDK" detail="VITE_PAYPAL_CLIENT_ID" value={paypalClientId && !paypalClientId.toLowerCase().includes('replace') ? 'Client ID configured' : 'Not configured'} good={Boolean(paypalClientId && !paypalClientId.toLowerCase().includes('replace'))}/><SettingRow icon="spark" title="AI Copilot" detail="Provider and API key are configured on the backend" value="Backend-managed" good={null}/><SettingRow icon="truck" title="Live carrier integrations" detail={carrierCatalog?.note || 'Carrier adapter availability reported by backend.'} value={carrierCatalog?.live_integrations_available ? 'Available' : 'Not configured'} good={Boolean(carrierCatalog?.live_integrations_available)}/></div></section>
+    <section className="panel settings-panel"><div className="panel-header"><div><span className="eyebrow">SERVICE HEALTH</span><h3>Connected services</h3><p>Configuration visibility only; secrets are never shown in the browser.</p></div></div><div className="settings-list"><SettingRow icon="activity" title="FastAPI backend" detail={apiBaseUrl} value={health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()) ? 'Connected' : 'Unavailable'} good={Boolean(health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()))}/><SettingRow icon="database" title="Database" detail="PostgreSQL connection reported by backend" value={health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()) ? 'Available' : 'Unknown'} good={Boolean(health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()))}/><SettingRow icon="wallet" title="PayPal JavaScript SDK" detail="VITE_PAYPAL_CLIENT_ID" value={paypalClientId && !paypalClientId.toLowerCase().includes('replace') ? 'Client ID configured' : 'Not configured'} good={Boolean(paypalClientId && !paypalClientId.toLowerCase().includes('replace'))}/><SettingRow icon="spark" title="AI Copilot" detail="Provider and API key are configured on the backend" value="Backend-managed" good={null}/><SettingRow icon="truck" title="Live carrier integrations" detail={carrierCatalog?.note || 'Carrier adapter availability reported by backend.'} value={carrierCatalog?.live_integrations_available ? 'Available' : 'Not configured'} good={Boolean(carrierCatalog?.live_integrations_available)}/></div></section>
     <div className="settings-grid"><section className="panel"><div className="panel-header"><div><span className="eyebrow">APPLICATION MODE</span><h3>Environment</h3></div><span className="environment-pill"><span className="environment-dot"/>{health?.service === 'FreightPilot AI Backend' ? 'Production Ready' : 'Unknown'}</span></div><div className="setting-description"><p>Current backend mode is reported by <code>/health</code>. The demo environment should use PayPal Sandbox and clearly mark synthetic carrier data.</p><div className="detail-line"><span>API base URL</span><strong>{apiBaseUrl}</strong></div><div className="detail-line"><span>Signed-in account</span><strong>{currentUser?.email || 'Guest / demo'}</strong></div><div className="detail-line"><span>Data scope</span><strong>{analytics?.data_scope || 'Unavailable'}</strong></div></div></section><section className="panel"><div className="panel-header"><div><span className="eyebrow">DEMO CONTROLS</span><h3>Seed data</h3><p>Reset synthetic demo content for a fresh presentation.</p></div></div><div className="demo-control"><div className="demo-control-icon"><Icon name="refresh"/></div><div><strong>Restore demo dataset</strong><span>The backend prevents deleting a shipment with linked payment records.</span></div><button className="btn btn-secondary btn-sm" onClick={() => void handleReset()} disabled={resetting}>{resetting ? 'Resetting…' : 'Reset demo'}</button></div></section></div>
     <section className="panel"><div className="panel-header"><div><span className="eyebrow">CARRIER REGISTRY</span><h3>Available adapters</h3><p>These are backend adapter registrations, not a list of confirmed live shipping providers.</p></div></div>{carrierCatalog?.items.length ? <div className="adapter-grid">{carrierCatalog.items.map((item) => <div className="adapter-card" key={item.code}><div className="adapter-mark">{item.name.slice(0, 1)}</div><div><strong>{item.name}</strong><span>{item.code}</span></div><StatusBadge value={item.status === 'CONFIGURED' ? 'REGISTERED' : 'NOT CONFIGURED'}/></div>)}</div> : <div className="empty-inline"><strong>No adapter registered</strong><span>Configure a carrier connector in backend/app/services/carrier_service.py.</span></div>}</section>
   </>;
@@ -1089,7 +978,7 @@ export default function App(): React.ReactElement {
       <StatCard label="Total Carriers" value={carrierPerformance.length || 0} caption="In quote database" icon="truck" tint="tint-coral"/>
       <StatCard label="Quote Activity" value={carrierPerformance.reduce((s, c) => s + (c.quote_count || 0), 0)} caption="Stored carrier quotes" icon="quotes" tint="tint-cream"/>
       <StatCard label="Configured Adapters" value={carrierCatalog?.items.filter(i => i.status === 'CONFIGURED').length || 0} caption="Live API connections" icon="activity" tint="tint-coral"/>
-      <StatCard label="Avg. Quote Value" value={carrierPerformance.length ? Math.round(carrierPerformance.reduce((s, c) => s + Number(c.average_quote || 0), 0) / carrierPerformance.length) : 0} caption="Across all carriers" icon="wallet" tint="tint-cream"/>
+      <StatCard label="Avg. Transit Time" value={(() => { const values = carrierPerformance.map((c) => c.average_transit_days).filter((value): value is number => value != null && Number.isFinite(value)); return values.length ? `${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} days` : '—'; })()} caption="For quotes with transit details" icon="clock" tint="tint-cream"/>
     </div>
     <section className="panel table-panel">
       <div className="panel-header"><div><span className="eyebrow">CARRIER REGISTRY</span><h3>Carrier catalog <span className="subtle-count">{carrierCatalog?.items.length ?? 0}</span></h3><p>{carrierCatalog?.note || 'Backend-registered carrier adapters.'}</p></div></div>
@@ -1132,7 +1021,6 @@ export default function App(): React.ReactElement {
   );
 
   const renderPage = () => {
-    if (loading && page === 'overview') return <LoadingPanel label="Connecting to FreightPilot services…"/>;
     if (page === 'landing') return renderLanding();
     switch (page) {
       case 'overview': return renderOverview();
@@ -1153,42 +1041,42 @@ export default function App(): React.ReactElement {
     return (
       <div className="public-website-shell">
         {renderLanding()}
-        {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuthenticated={handleAuthSuccess}/>}
+        {authOpen && <AuthModal onClose={closeAuth} onAuthenticated={handleAuthSuccess} initialMode={authInitialMode}/>}
         {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15}/></span>{toast}<button onClick={() => setToast(null)}><Icon name="close" size={14}/></button></div>}
         <NewShipmentModal isOpen={newShipmentOpen} onClose={() => setNewShipmentOpen(false)} onSubmit={handleCreateShipment}/>
       </div>
     );
   }
 
-  return <div className="app-shell">
-    {mobileMenuOpen && <div className="sidebar-backdrop" onClick={() => setMobileMenuOpen(false)} />}
-    <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-      <div className="sidebar-brand"><div className="brand-mark">FP</div><div><strong>FreightPilot <span>AI</span></strong><small>MARITIME LOGISTICS</small></div></div>
-      <nav className="side-nav">{NAV_ITEMS.map((item) => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => { setPage(item.id); setMobileMenuOpen(false); }}><Icon name={item.icon} size={18}/><span>{item.label}</span>{item.id === 'payments' && payments.some((payment) => payment.status === 'REVIEW_REQUIRED') && <i className="nav-alert-dot"/>}</button>)}</nav>
-      <div className="sidebar-bottom">
-        <div className="sidebar-user-card">
-          <div className="user-card-avatar">{currentUser ? currentUser.email.slice(0, 1).toUpperCase() : 'SK'}</div>
-          <div className="user-card-info">
-            <strong>{currentUser ? currentUser.email.split('@')[0] : 'Sachin Kumar'}</strong>
-            <span>{currentUser ? 'Enterprise Plan' : 'Enterprise Plan'}</span>
-          </div>
-          <button className="user-card-action" onClick={() => setPage('settings')} title="Settings"><Icon name="settings" size={14}/></button>
-        </div>
-      </div>
-    </aside>
-    <div className="app-main">{topHeader}<main className="page-content"><div className="page-title-row">
-  <div>
-    <Breadcrumbs currentPage={page} activeShipmentId={activeShipment?.id} onNavigate={setPage} onBack={goBack} />
-    <div className="eyebrow">FREIGHTPILOT AI / WORKSPACE</div>
-    <h1>{currentPage.title}</h1>
-    <p>{currentPage.subtitle}</p>
-  </div>
-  {page !== 'overview' && page !== 'settings' && <div className="page-context"><span className="context-label">ACTIVE SHIPMENT</span><select value={activeShipment?.id || ''} onChange={(event) => void selectShipment(event.target.value)} disabled={!shipments.length}>{shipments.length === 0 && <option value="">No shipments</option>}{shipments.map((shipment) => <option value={shipment.id} key={shipment.id}>{shipment.cargo_type} · {shipment.origin} → {shipment.destination}</option>)}</select></div>}
-</div>{pageError && <div className="error-banner"><Icon name="warning" size={17}/><span>{pageError}</span><button className="error-retry" onClick={() => void loadPortfolio(activeShipment?.id)}>Retry</button><button onClick={() => setPageError(null)} aria-label="Dismiss"><Icon name="close" size={15}/></button></div>}{renderPage()}<footer className="app-footer"><span>FreightPilot AI · PayPal AI Hackathon 2026</span><span>{health?.service === 'FreightPilot AI Backend' ? 'Production ready' : 'Sandbox demo · Synthetic data is labeled'}</span></footer></main></div>
-    {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15}/></span>{toast}<button onClick={() => setToast(null)}><Icon name="close" size={14}/></button></div>}
-    <NewShipmentModal isOpen={newShipmentOpen} onClose={() => setNewShipmentOpen(false)} onSubmit={handleCreateShipment}/>
-    {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuthenticated={handleAuthSuccess}/>}
-  </div>;
+  return (
+    <>
+      <FreightWorkspaceShell
+        page={page as WorkspacePage}
+        title={currentPage.title}
+        subtitle={currentPage.subtitle}
+        currentUser={currentUser}
+        notifications={notifications}
+        shipments={shipments}
+        activeShipmentId={activeShipment?.id}
+        backendOnline={Boolean(health && ['ok', 'healthy', 'available'].includes(health.status.toLowerCase()))}
+        error={pageError}
+        onNavigate={(nextPage) => setPage(nextPage)}
+        onSelectShipment={(id) => { void selectShipment(id); }}
+        onSignIn={() => openAuth('login')}
+        onSignOut={() => { setAuthToken(null); setCurrentUser(null); setPage('landing'); showToast('Signed out.'); void loadPortfolio(); }}
+        onPublicSite={() => setPage('landing')}
+        onNewShipment={() => setNewShipmentOpen(true)}
+        onSearchChange={setSearch}
+        onRetry={() => void loadPortfolio(activeShipment?.id)}
+        onDismissError={() => setPageError(null)}
+      >
+        {renderPage()}
+      </FreightWorkspaceShell>
+      {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15}/></span>{toast}<button onClick={() => setToast(null)}><Icon name="close" size={14}/></button></div>}
+      <NewShipmentModal isOpen={newShipmentOpen} onClose={() => setNewShipmentOpen(false)} onSubmit={handleCreateShipment}/>
+      {authOpen && <AuthModal onClose={closeAuth} onAuthenticated={handleAuthSuccess} initialMode={authInitialMode}/>}
+    </>
+  );
 }
 
 function Fact({ label, value }: { label: string; value: string }): React.ReactElement { return <div className="shipment-fact"><span>{label}</span><strong>{value}</strong></div>; }
