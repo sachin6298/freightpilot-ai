@@ -25,7 +25,7 @@ from app.core.security import (
     require_verified_email, require_verified_phone, require_full_verification,
     hash_otp, verify_otp,
 )
-from app.db.models import User, BuyerProfile, SellerProfile, EmailVerification, PhoneVerification, OAuthIdentity
+from app.db.models import User, BuyerProfile, SellerProfile, EmailVerification, PhoneVerification, OAuthIdentity, PasswordResetToken
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -100,6 +100,20 @@ class PhoneVerificationRequest(BaseModel):
 class VerifyPhoneRequest(BaseModel):
     phone_number: str = Field(..., min_length=9, max_length=16, pattern=r"^\+[1-9]\d{7,14}$")
     otp: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=254)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=100)
+    password: str = Field(..., min_length=10, max_length=128)
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=128)
+    reason: str | None = Field(None, max_length=500)
 
 
 class UserResponse(BaseModel):
@@ -1026,3 +1040,179 @@ def refresh_access_token(payload: RefreshTokenRequest, db: Session = Depends(get
 def logout():
     """Logout endpoint. Client discards the tokens."""
     return {"code": "LOGGED_OUT", "message": "Logged out successfully."}
+
+
+# ================== Password Reset Endpoints ==================
+
+# Rate limiting: track forgot password requests per IP/email
+_forgot_password_requests: dict[str, list[datetime]] = {}
+_FORGOT_PASSWORD_WINDOW = timedelta(hours=1)
+_FORGOT_PASSWORD_MAX_REQUESTS = 3
+
+
+def _check_forgot_password_rate_limit(identifier: str) -> None:
+    """Check rate limit for forgot password requests."""
+    now = datetime.now(timezone.utc)
+    window_start = now - _FORGOT_PASSWORD_WINDOW
+    if identifier not in _forgot_password_requests:
+        _forgot_password_requests[identifier] = []
+    # Remove old entries
+    _forgot_password_requests[identifier] = [
+        t for t in _forgot_password_requests[identifier] if t > window_start
+    ]
+    if len(_forgot_password_requests[identifier]) >= _FORGOT_PASSWORD_MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail={
+            "code": "RATE_LIMIT_EXCEEDED",
+            "message": "Too many password reset requests. Please try again later.",
+        })
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Request a password reset email. Does not reveal if email exists."""
+    email = normalize_email(payload.email)
+    identifier = f"forgot:{email}"
+    _check_forgot_password_rate_limit(identifier)
+
+    user = db.query(User).filter(User.email == email, User.is_active.is_(True), User.is_deleted.is_(False)).first()
+
+    # Always return success to prevent email enumeration
+    if not user:
+        return {"code": "RESET_EMAIL_SENT", "message": "If an account exists for this email, a password reset link has been sent."}
+
+    # Invalidate any existing unused reset tokens for this user
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None),
+    ).update({PasswordResetToken.used_at: datetime.now(timezone.utc)})
+
+    # Create new reset token
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    reset_token = PasswordResetToken(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db.add(reset_token)
+
+    # Send reset email
+    try:
+        # Use the existing send_verification_email but with reset URL
+        from app.services.verification_delivery import send_verification_email
+        # We need a reset password email - let's create a simple inline one
+        reset_url = f"{settings.FRONTEND_URL or 'http://localhost:5173'}/reset-password?token={token}"
+
+        import httpx
+        if settings.RESEND_API_KEY:
+            async def send_reset_email():
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        "https://api.resend.com/emails",
+                        headers={
+                            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "from": settings.RESEND_FROM_EMAIL or "FreightPilot <noreply@freightpilot.ai>",
+                            "to": [email],
+                            "subject": "Reset your FreightPilot AI password",
+                            "html": f"""
+                                <div style="font-family:system-ui;max-width:600px;margin:0 auto;padding:20px;color:#182334">
+                                    <h1 style="color:#1a3c5e">Reset your password</h1>
+                                    <p>You requested a password reset for your FreightPilot AI account.</p>
+                                    <p><a href="{reset_url}" style="background:#1a3c5e;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block">Reset Password</a></p>
+                                    <p style="color:#666;font-size:14px">This link expires in 1 hour. If you didn't request this, please ignore this email.</p>
+                                    <hr style="border:none;border-top:1px solid #e0e0e0;margin:20px 0">
+                                    <p style="color:#999;font-size:12px">FreightPilot AI - Freight Management Platform</p>
+                                </div>
+                            """,
+                        },
+                        timeout=10.0,
+                    )
+            import asyncio
+            asyncio.run(send_reset_email())
+        else:
+            logger.warning("Resend not configured; password reset email not sent")
+    except Exception as exc:
+        logger.error("Failed to send password reset email: %s", exc)
+        # Don't fail the request - we already created the token
+
+    _forgot_password_requests[identifier].append(datetime.now(timezone.utc))
+    db.commit()
+
+    return {"code": "RESET_EMAIL_SENT", "message": "If an account exists for this email, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Reset password using a valid token."""
+    token_hash = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
+
+    reset_token = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token_hash == token_hash,
+        PasswordResetToken.used_at.is_(None),
+    ).first()
+
+    if not reset_token:
+        raise HTTPException(status_code=400, detail={
+            "code": "INVALID_TOKEN", "message": "Invalid or expired reset token."
+        })
+
+    if datetime.now(timezone.utc) > reset_token.expires_at:
+        db.delete(reset_token)
+        db.commit()
+        raise HTTPException(status_code=400, detail={
+            "code": "TOKEN_EXPIRED", "message": "Reset token has expired. Please request a new one."
+        })
+
+    user = db.query(User).filter(User.id == reset_token.user_id, User.is_active.is_(True)).first()
+    if not user:
+        raise HTTPException(status_code=400, detail={
+            "code": "USER_NOT_FOUND", "message": "User no longer exists."
+        })
+
+    # Hash new password
+    new_password_hash = hash_password(payload.password)
+    user.password_hash = new_password_hash
+
+    # Mark token as used
+    reset_token.used_at = datetime.now(timezone.utc)
+
+    # Invalidate all other unused tokens for this user
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None),
+    ).update({PasswordResetToken.used_at: datetime.now(timezone.utc)})
+
+    db.commit()
+
+    return {"code": "PASSWORD_RESET", "message": "Password has been reset successfully. You can now sign in with your new password."}
+
+
+# ================== Account Deletion Endpoint ==================
+
+@router.delete("/me")
+def delete_account(payload: DeleteAccountRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Soft delete the current user's account. Requires password confirmation."""
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail={
+            "code": "INVALID_PASSWORD", "message": "Incorrect password. Account deletion requires password confirmation."
+        })
+
+    # Soft delete: mark user as deleted
+    user.is_deleted = True
+    user.deleted_at = datetime.now(timezone.utc)
+    user.deletion_reason = payload.reason
+    user.is_active = False
+    user.email_verified = False
+    user.phone_verified = False
+    # Keep email for audit but mark as deleted
+    user.email = f"deleted_{user.id}_{user.email}"
+
+    # Clear refresh tokens would happen on next login attempt (user is inactive)
+
+    db.commit()
+
+    return {"code": "ACCOUNT_DELETED", "message": "Your account has been deleted. You can contact support within 30 days to restore it."}

@@ -208,3 +208,25 @@ export const linkFirebasePhone = (idToken: string, phoneNumber: string) =>
     method: 'POST',
     body: JSON.stringify({ id_token: idToken, phone_number: phoneNumber }),
   });
+
+
+// Password reset API
+export const requestPasswordReset = (email: string) =>
+  request<{ code: string; message: string }>('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+
+export const resetPassword = (token: string, password: string) =>
+  request<{ code: string; message: string }>('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  });
+
+
+// Account deletion API
+export const deleteAccount = (password: string, reason?: string) =>
+  request<{ code: string; message: string }>('/api/auth/me', {
+    method: 'DELETE',
+    body: JSON.stringify({ password, reason }),
+  });
