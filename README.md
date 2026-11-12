@@ -4,6 +4,13 @@
 
 The application is a React + TypeScript + Vite frontend backed by a FastAPI modular monolith and SQLAlchemy persistence. It is currently configured as a local Sandbox/demo application. Synthetic quotes and unavailable live integrations are explicitly identified in the UI.
 
+## Live Demo
+
+- **Live Application:** https://freightpilot-ai-frontend.onrender.com/
+- **GitHub Repository:** https://github.com/sachin6298/freightpilot-ai
+- **Backend API:** https://freightpilot-backend.onrender.com
+- **API Documentation:** https://freightpilot-backend.onrender.com/docs
+
 ## Current application capabilities
 
 - Overview with database-backed shipment, quote, risk and captured-payment metrics.
