@@ -32,7 +32,15 @@ export function clearAuthTokens(): void {
   window.localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
-export async function refreshAccessToken(): Promise<string | null> {
+let refreshInFlight: Promise<string | null> | null = null;
+
+/** Single-flight refresh: refresh tokens rotate on use, so concurrent 401s must share one exchange. */
+export function refreshAccessToken(): Promise<string | null> {
+  refreshInFlight ??= exchangeRefreshToken().finally(() => { refreshInFlight = null; });
+  return refreshInFlight;
+}
+
+async function exchangeRefreshToken(): Promise<string | null> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return null;
 
@@ -63,7 +71,10 @@ export async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+// Credential endpoints never trigger a refresh, so bad passwords surface directly and cannot loop.
+const NO_REFRESH_PATH = /^\/api\/auth\/(login|register|refresh|oauth|phone|firebase|forgot-password|reset-password)/;
+
+async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
   const headers = new Headers(init.headers || {});
   headers.set('Accept', 'application/json');
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
@@ -75,6 +86,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   } catch {
     throw new Error(`Cannot reach the API at ${API_BASE_URL}. Confirm that the FastAPI server is running.`);
+  }
+
+  // Access tokens expire after 20 minutes: refresh once and retry the original call.
+  if (response.status === 401 && !retried && !NO_REFRESH_PATH.test(path) && getRefreshToken()) {
+    if (await refreshAccessToken()) return request<T>(path, init, true);
   }
 
   if (!response.ok) {
@@ -198,13 +214,13 @@ export const verifyAccountPhone = (phoneNumber: string, otp: string) =>
 
 // Firebase phone authentication API
 export const verifyFirebasePhone = (idToken: string, phoneNumber: string) =>
-  request<AuthResponse>('/api/auth/firebase/phone/verify', {
+  request<AuthResponse>('/api/auth/firebase/verify-phone', {
     method: 'POST',
     body: JSON.stringify({ id_token: idToken, phone_number: phoneNumber }),
   });
 
 export const linkFirebasePhone = (idToken: string, phoneNumber: string) =>
-  request<UserProfile>('/api/auth/firebase/phone/link', {
+  request<UserProfile>('/api/auth/firebase/link-phone', {
     method: 'POST',
     body: JSON.stringify({ id_token: idToken, phone_number: phoneNumber }),
   });
