@@ -37,11 +37,11 @@ services:
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: FRONTEND_ORIGIN
-        sync: false
+        value: "https://freightpilot-frontend.onrender.com"
       - key: CORS_ALLOWED_ORIGINS
         value: ""
       - key: API_PUBLIC_URL
-        sync: false
+        value: "https://freightpilot-backend.onrender.com"
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: APPLE_CLIENT_ID

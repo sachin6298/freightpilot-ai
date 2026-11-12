@@ -58,6 +58,8 @@ allowed_origins.extend(origin.strip().rstrip("/") for origin in settings.CORS_AL
 if settings.FRONTEND_ORIGIN.rstrip("/") == "http://localhost:5173":
     allowed_origins.append("http://127.0.0.1:5173")
 
+logger.info("CORS allowed_origins=%s", sorted(set(allowed_origins)))
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(set(allowed_origins)),
@@ -129,6 +131,12 @@ def health_check() -> dict[str, str]:
     """Liveness probe for UptimeRobot and load balancers.
     Returns minimal info - no infrastructure details disclosed.
     """
+    return {"status": "healthy", "service": "FreightPilot AI Backend"}
+
+
+@app.get("/api/health", tags=["System"])
+def api_health_check() -> dict[str, str]:
+    """API-prefixed liveness probe for frontend connectivity checks."""
     return {"status": "healthy", "service": "FreightPilot AI Backend"}
 
 
