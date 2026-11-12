@@ -1,0 +1,12 @@
+services:
+  clamav:
+    image: clamav/clamav:stable
+    container_name: freightpilot-clamav
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3310:3310"
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5

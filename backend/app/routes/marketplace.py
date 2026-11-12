@@ -10,9 +10,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 
+from app.config import settings
 from app.db.session import get_db
 from app.db.models import Shipment, Quote, QuotePriceRevision, CounterOffer, User, SellerProfile
-from app.core.security import get_current_user, require_buyer, require_seller, get_optional_current_user
+from app.core.security import get_current_user, require_buyer, require_seller, require_verified_seller
 from app.core.audit import write_audit
 
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
@@ -49,7 +50,7 @@ def browse_marketplace_shipments(
     mode: Optional[str] = None,
     limit: int = Query(default=50, le=100),
     offset: int = 0,
-    user: User = Depends(require_seller),
+    user: User = Depends(require_verified_seller),
     db: Session = Depends(get_db)
 ):
     """Sellers browse eligible buyer shipments available for quoting."""
@@ -97,7 +98,7 @@ class SellerQuoteSubmission(BaseModel):
 @router.post("/quotes")
 def submit_seller_quote(
     data: SellerQuoteSubmission,
-    user: User = Depends(require_seller),
+    user: User = Depends(require_verified_seller),
     db: Session = Depends(get_db)
 ):
     """Verified or active seller submits a binding quote on an open shipment."""
@@ -152,7 +153,7 @@ def submit_seller_quote(
 def edit_quote_price(
     quote_id: str,
     data: QuotePriceEditRequest,
-    user: User = Depends(require_seller),
+    user: User = Depends(require_verified_seller),
     db: Session = Depends(get_db)
 ):
     """Phase 7: Seller edits price of an unaccepted quote, capturing audit history."""
@@ -165,8 +166,12 @@ def edit_quote_price(
         raise HTTPException(status_code=403, detail="You do not own this quote.")
 
     # Business rule: Lock against editing if accepted or paid
-    if quote.shipment.status in ["BOOKED", "PAID", "DELIVERED"]:
-        raise HTTPException(status_code=409, detail="Quote cannot be modified because the shipment has progressed to booking/payment.")
+    if quote.shipment.status not in {"DRAFT", "QUOTED"}:
+        raise HTTPException(status_code=409, detail="Quote cannot be modified because the shipment is no longer open for negotiation.")
+    if data.currency.upper() != quote.currency.upper():
+        raise HTTPException(status_code=422, detail="A quote revision cannot change the original currency.")
+    if data.validity_until and data.validity_until <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=422, detail="Quote validity must be in the future.")
 
     new_total = data.base_amount + data.surcharge_amount
     prev_total = quote.total_amount
@@ -221,6 +226,12 @@ def get_quote_price_history(
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found.")
+    if user.role == "BUYER" and quote.shipment.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Quote not found.")
+    if user.role == "SELLER" and quote.seller_id != user.id:
+        raise HTTPException(status_code=404, detail="Quote not found.")
+    if user.role not in {"BUYER", "SELLER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
     revisions = db.query(QuotePriceRevision).filter(
         QuotePriceRevision.quote_id == quote_id
@@ -254,8 +265,14 @@ def create_counter_offer(
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found.")
 
-    if quote.shipment.user_id and quote.shipment.user_id != user.id:
-        raise HTTPException(status_code=403, detail="You can only negotiate quotes on your own shipments.")
+    if quote.shipment.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Quote not found.")
+    if settings.is_production and (not user.email_verified or not user.phone_verified):
+        raise HTTPException(status_code=403, detail={"code": "BUYER_VERIFICATION_REQUIRED", "message": "Verify your email and phone before negotiating a commercial quote."})
+    if data.currency.upper() != quote.currency.upper():
+        raise HTTPException(status_code=422, detail="Counteroffer currency must match the quote currency.")
+    if settings.is_production and (not quote.seller_id or quote.source_kind != "SELLER_MARKETPLACE"):
+        raise HTTPException(status_code=409, detail="Only a verified marketplace seller quote can be negotiated in production.")
 
     expires_at = datetime.now(timezone.utc) + timedelta(hours=data.expires_in_hours)
 
@@ -292,7 +309,7 @@ def create_counter_offer(
 def respond_to_counter_offer(
     counter_id: str,
     data: CounterOfferRespondRequest,
-    user: User = Depends(require_seller),
+    user: User = Depends(require_verified_seller),
     db: Session = Depends(get_db)
 ):
     """Seller accepts or rejects a buyer's counteroffer."""
@@ -300,13 +317,16 @@ def respond_to_counter_offer(
     if not counter:
         raise HTTPException(status_code=404, detail="Counteroffer not found.")
 
-    if counter.seller_id and counter.seller_id != user.id:
-        raise HTTPException(status_code=403, detail="You are not authorized to respond to this counteroffer.")
+    if counter.seller_id != user.id:
+        raise HTTPException(status_code=404, detail="Counteroffer not found.")
 
     if counter.status != "OPEN":
         raise HTTPException(status_code=400, detail=f"Counteroffer is already {counter.status}.")
 
-    if counter.expires_at and datetime.now(timezone.utc) > counter.expires_at:
+    expiry = counter.expires_at
+    if expiry and expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    if expiry and datetime.now(timezone.utc) > expiry:
         counter.status = "EXPIRED"
         db.commit()
         raise HTTPException(status_code=400, detail="This counteroffer has expired.")
@@ -314,11 +334,22 @@ def respond_to_counter_offer(
     if data.decision == "ACCEPT":
         counter.status = "ACCEPTED"
         counter.seller_response = data.response_notes or "Accepted by seller"
-        # If accepted, update the underlying quote price to the agreed counter amount
         quote = counter.quote
+        if counter.currency.upper() != quote.currency.upper() or counter.counter_amount <= quote.surcharge_amount:
+            raise HTTPException(status_code=409, detail="Accepted counteroffer is inconsistent with the quote currency or surcharge breakdown.")
+        previous_total = quote.total_amount
+        revision_count = db.query(QuotePriceRevision).filter(QuotePriceRevision.quote_id == quote.id).count()
+        db.add(QuotePriceRevision(
+            quote_id=quote.id, seller_id=user.id, revision_number=revision_count + 1,
+            original_amount=quote.base_amount + quote.surcharge_amount if revision_count == 0 else quote.price_revisions[-1].original_amount if quote.price_revisions else previous_total,
+            previous_amount=previous_total, revised_amount=counter.counter_amount, currency=quote.currency,
+            fee_breakdown={"base": float(counter.counter_amount - quote.surcharge_amount), "surcharges": float(quote.surcharge_amount)},
+            revision_reason="Counteroffer accepted",
+        ))
         quote.total_amount = counter.counter_amount
-        # Proportionally adjust base
         quote.base_amount = counter.counter_amount - quote.surcharge_amount
+        write_audit(db, entity_type="QUOTE", entity_id=quote.id, action="COUNTEROFFER_ACCEPTED_PRICE_UPDATED",
+                    user_id=user.id, details={"previous_amount": str(previous_total), "new_amount": str(counter.counter_amount), "counter_offer_id": counter.id})
     else:
         counter.status = "REJECTED"
         counter.seller_response = data.response_notes or "Rejected by seller"
@@ -343,6 +374,12 @@ def list_quote_counter_offers(
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found.")
+    if user.role == "BUYER" and quote.shipment.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Quote not found.")
+    if user.role == "SELLER" and quote.seller_id != user.id:
+        raise HTTPException(status_code=404, detail="Quote not found.")
+    if user.role not in {"BUYER", "SELLER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
     counters = db.query(CounterOffer).filter(
         CounterOffer.quote_id == quote_id

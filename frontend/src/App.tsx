@@ -1,32 +1,29 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NewShipmentModal } from './components/NewShipmentModal';
 import { PayPalCheckout } from './components/PayPalCheckout';
+import { SvgDonutChart, SvgAreaChart, SvgRiskGauge, SvgBarComparison } from './components/SvgCharts';
+import Contact5Section from './components/Contact5';
+import { FreightWorkspaceShell, type WorkspacePage } from './components/workspace/FreightWorkspaceShell';
+import { FreightOverview } from './components/workspace/FreightOverview';
+import { ThemeToggleButton } from './components/workspace/ThemeToggleButton';
+import { FamilyReceiveComponent } from './components/ui/FamilyReceiveComponent';
+import { AiCopilotChat } from './components/ai/AiCopilotChat';
 import {
   addTrackingEvent, apiBaseUrl, assessQuote, cancelShipment, compareQuotesWithCopilot,
   createShipment, fetchAnalyticsOverview, fetchCarrierCatalog, fetchCarrierPerformance,
   fetchCurrentUser, fetchHealth, fetchNotifications, fetchShipmentPayments,
   fetchShipmentQuotes, fetchShipmentEstimate, fetchShipments, fetchTracking,
-  getAuthToken, login, markNotificationRead, paypalClientId, refreshCarrierQuotes,
-  register, resetDemoData, setAuthToken,
+  getAuthToken, login, registerBuyer, registerSeller, paypalClientId, refreshCarrierQuotes,
+  resetDemoData, setAuthToken, oauthSignIn, requestPhoneLoginOtp, verifyPhoneLoginOtp, updateAccountPhone,
+  linkFirebasePhone, deleteAccount, requestPasswordReset, resetPassword,
 } from './api';
 import {
   AnalyticsOverview, CarrierCatalog, CarrierPerformance, CopilotResult, NotificationItem,
   PaymentRecord, Quote, RateEstimate, Shipment, ShipmentCreatePayload, TrackingEvent, UserProfile,
 } from './types';
 
-type Page = 'overview' | 'shipments' | 'quotes' | 'risk' | 'copilot' | 'payments' | 'analytics' | 'settings';
+type Page = 'landing' | 'overview' | 'shipments' | 'quotes' | 'payments' | 'copilot' | 'risk' | 'analytics' | 'carriers' | 'documents' | 'settings';
 type IconName = 'overview' | 'shipments' | 'quotes' | 'risk' | 'copilot' | 'payments' | 'analytics' | 'settings' | 'bell' | 'plus' | 'search' | 'arrow' | 'refresh' | 'clock' | 'check' | 'warning' | 'external' | 'menu' | 'logout' | 'shield' | 'truck' | 'wallet' | 'spark' | 'calendar' | 'filter' | 'close' | 'route' | 'file' | 'database' | 'activity' | 'chevron';
-
-const NAV_ITEMS: Array<{ id: Page; label: string; icon: IconName; group: string }> = [
-  { id: 'overview', label: 'Overview', icon: 'overview', group: 'WORKSPACE' },
-  { id: 'shipments', label: 'Shipments', icon: 'shipments', group: 'WORKSPACE' },
-  { id: 'quotes', label: 'Freight quotes', icon: 'quotes', group: 'WORKSPACE' },
-  { id: 'risk', label: 'Risk manager', icon: 'risk', group: 'INTELLIGENCE' },
-  { id: 'copilot', label: 'AI copilot', icon: 'copilot', group: 'INTELLIGENCE' },
-  { id: 'payments', label: 'Payments', icon: 'payments', group: 'FINANCE' },
-  { id: 'analytics', label: 'Analytics', icon: 'analytics', group: 'FINANCE' },
-  { id: 'settings', label: 'Settings', icon: 'settings', group: 'SYSTEM' },
-];
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }): React.ReactElement {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true as const };
@@ -83,16 +80,16 @@ function dateTime(value?: string | null): string {
 }
 function statusTone(status: string): string {
   const normalized = status.toUpperCase();
-  if (['DELIVERED', 'PAID', 'CAPTURED', 'COMPLETED'].includes(normalized)) return 'green';
-  if (['IN_TRANSIT', 'BOOKED', 'QUOTED', 'APPROVED'].includes(normalized)) return 'blue';
-  if (['EXCEPTION', 'FAILED', 'REVIEW_REQUIRED', 'CANCELLED', 'REFUNDED'].includes(normalized)) return 'red';
-  return 'amber';
+  if (['DELIVERED', 'PAID', 'CAPTURED', 'COMPLETED', 'VERIFIED'].includes(normalized)) return 'cream';
+  if (['IN_TRANSIT', 'BOOKED', 'QUOTED', 'APPROVED'].includes(normalized)) return 'coral-subtle';
+  if (['EXCEPTION', 'FAILED', 'REVIEW_REQUIRED', 'CANCELLED', 'REFUNDED'].includes(normalized)) return 'coral-bold';
+  return 'coral-outline';
 }
 function riskTone(label?: string): string {
-  if (label === 'LOWER_CONCERN') return 'green';
-  if (label === 'HIGH_ATTENTION') return 'red';
-  if (label === 'REVIEW') return 'amber';
-  return 'blue';
+  if (label === 'LOWER_CONCERN') return 'cream';
+  if (label === 'HIGH_ATTENTION') return 'coral-bold';
+  if (label === 'REVIEW') return 'coral-subtle';
+  return 'coral-outline';
 }
 function riskLabel(label?: string): string {
   return (label || 'NOT ASSESSED').replace(/_/g, ' ');
@@ -113,8 +110,45 @@ function EmptyState({ title, description, action }: { title: string; description
   return <div className="empty-panel"><div className="empty-symbol"><Icon name="file" size={23}/></div><h3>{title}</h3><p>{description}</p>{action}</div>;
 }
 
-function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void }): React.ReactElement {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+function createAuthNonce(): string {
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function GoogleBrandIcon(): React.ReactElement {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 48 48" width="20" height="20" focusable="false">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.91c-.58 2.96-2.25 5.47-4.72 7.16l7.62 5.91c4.45-4.11 7.17-10.16 7.17-17.54Z"/>
+      <path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19Z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.91l-7.62-5.91c-2.12 1.44-4.84 2.29-8.28 2.29-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/>
+    </svg>
+  );
+}
+
+function AppleBrandIcon(): React.ReactElement {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" focusable="false">
+      <path fill="currentColor" d="M16.37 12.1c.02 2.18 1.91 2.9 1.93 2.91-.02.05-.3 1.04-1 2.06-.6.88-1.22 1.76-2.2 1.78-.96.02-1.27-.57-2.37-.57s-1.45.55-2.34.59c-.94.03-1.65-.95-2.25-1.83-1.23-1.78-2.17-5.02-.91-7.22a3.47 3.47 0 0 1 2.94-1.81c.92-.02 1.79.62 2.36.62.56 0 1.58-.76 2.67-.65.46.02 1.73.19 2.55 1.38-.07.04-1.52.89-1.38 2.74ZM14.62 6.3c.5-.6.83-1.43.74-2.26-.72.03-1.58.48-2.1 1.08-.46.53-.85 1.37-.74 2.17.79.06 1.61-.4 2.1-.99Z"/>
+    </svg>
+  );
+}
+
+function PhoneBrandIcon(): React.ReactElement {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+      <rect x="6.5" y="2" width="11" height="20" rx="2.2" />
+      <path d="M10 5h4M11 18.5h2" />
+    </svg>
+  );
+}
+
+function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken = null }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void; initialMode?: 'login' | 'register' | 'reset-password'; resetToken?: string | null }): React.ReactElement {
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset-password'>(initialMode);
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [method, setMethod] = useState<'password' | 'phone'>('password');
   const [role, setRole] = useState<'BUYER' | 'SELLER'>('BUYER');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -122,38 +156,354 @@ function AuthModal({ onClose, onAuthenticated }: { onClose: () => void; onAuthen
   const [businessAddress, setBusinessAddress] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpRequested, setOtpRequested] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [nonce] = useState(createAuthNonce);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+  const onAuthenticatedRef = useRef(onAuthenticated);
+  useEffect(() => { onAuthenticatedRef.current = onAuthenticated; }, [onAuthenticated]);
+
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  const appleClientId = import.meta.env.VITE_APPLE_CLIENT_ID || '';
+  const appleRedirectUri = import.meta.env.VITE_APPLE_REDIRECT_URI || '';
+
+  const completeOAuth = useCallback(async (provider: 'google' | 'apple', idToken: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await oauthSignIn(provider, idToken, nonce);
+      onAuthenticatedRef.current(response.user, response.access_token);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : `${provider} sign-in failed.`);
+    } finally {
+      setBusy(false);
+    }
+  }, [nonce]);
+
+  useEffect(() => {
+    if (!googleClientId) return;
+    let active = true;
+    const initializeGoogle = () => {
+      if (!active || !window.google?.accounts?.id || !googleButtonRef.current) return;
+      const target = googleButtonRef.current;
+      target.replaceChildren();
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        nonce,
+        auto_select: false,
+        callback: (response) => {
+          if (!response.credential) {
+            setError('Google did not return an identity token. Please retry.');
+            return;
+          }
+          void completeOAuth('google', response.credential);
+        },
+      });
+      window.google.accounts.id.renderButton(target, {
+        theme: 'outline',
+        size: 'large',
+        shape: 'rectangular',
+        text: 'continue_with',
+        width: Math.min(420, Math.max(260, target.clientWidth || 320)),
+        logo_alignment: 'left',
+      });
+    };
+    const script = document.getElementById('google-identity-sdk');
+    if (window.google?.accounts?.id) initializeGoogle();
+    else script?.addEventListener('load', initializeGoogle);
+    return () => {
+      active = false;
+      script?.removeEventListener('load', initializeGoogle);
+    };
+  }, [completeOAuth, googleClientId, nonce]);
 
   const submit = async (event: React.FormEvent) => {
-    event.preventDefault(); setBusy(true); setError(null);
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
     try {
       let response;
       if (mode === 'login') {
         response = await login(email, password);
       } else if (role === 'BUYER') {
-        response = await registerBuyer({ email, password, company_name: businessName || undefined, contact_person: contactPerson || undefined, phone_number: contactPhone || undefined });
+        response = await registerBuyer({
+          email,
+          password,
+          company_name: businessName || undefined,
+          contact_person: contactPerson || undefined,
+          phone_number: contactPhone || undefined,
+        });
       } else {
-        response = await registerSeller({ email, password, business_name: businessName || 'Freight Carrier LLC', business_address: businessAddress || '100 Port Road', country: 'US', contact_person: contactPerson || 'Operations Contact', contact_phone: contactPhone || '+1-555-0199' });
+        response = await registerSeller({
+          email,
+          password,
+          business_name: businessName,
+          business_address: businessAddress,
+          country: 'US',
+          contact_person: contactPerson,
+          contact_phone: contactPhone,
+        });
       }
       onAuthenticated(response.user, response.access_token);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Authentication failed.'); }
-    finally { setBusy(false); }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Authentication failed.');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card auth-card" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow">FREIGHTPILOT ACCOUNT</span><h3>{mode === 'login' ? 'Welcome back' : `Create ${role.toLowerCase()} account`}</h3><p>Secure freight procurement with role-based isolation.</p></div><button className="icon-button" onClick={onClose} aria-label="Close"><Icon name="close"/></button></div>
-    {mode === 'register' && <div className="role-selector" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}><button type="button" className={`btn btn-sm ${role === 'BUYER' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRole('BUYER')}>Buyer Account</button><button type="button" className={`btn btn-sm ${role === 'SELLER' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRole('SELLER')}>Seller / Carrier Account</button></div>}
-    <form onSubmit={submit} className="form-stack"><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="name@company.com"/></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={mode === 'register' ? 10 : 1} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={mode === 'register' ? 'At least 10 characters' : 'Your password'}/></label>
-      {mode === 'register' && role === 'SELLER' && <>
-        <label>Company / Business Name<input value={businessName} onChange={(e) => setBusinessName(e.target.value)} required placeholder="e.g. Apex Marine Freight Ltd."/></label>
-        <label>Business Address<input value={businessAddress} onChange={(e) => setBusinessAddress(e.target.value)} required placeholder="Headquarters street and city"/></label>
-        <label>Contact Phone<input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} required placeholder="+1-555-0199"/></label>
-      </>}
-      {error && <div className="inline-alert inline-alert-danger">{error}</div>}<button className="btn btn-primary btn-full" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button><button type="button" className="text-button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}>{mode === 'login' ? 'New to FreightPilot? Create an account' : 'Already have an account? Sign in'}</button></form><p className="fine-print">Local demo access remains available without signing in while backend AUTH_REQUIRED=false.</p></div></div>;
+  const requestPhoneCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await requestPhoneLoginOtp(phoneNumber.trim());
+      setOtpRequested(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not request an SMS code.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyPhoneCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await verifyPhoneLoginOtp(phoneNumber.trim(), otp.trim());
+      onAuthenticated(response.user, response.access_token);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The SMS code could not be verified.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const signInWithApple = async () => {
+    if (!appleClientId || !appleRedirectUri) {
+      setError('Add VITE_APPLE_CLIENT_ID and the registered HTTPS VITE_APPLE_REDIRECT_URI to frontend/.env.local before enabling Apple sign-in.');
+      return;
+    }
+    if (!window.AppleID?.auth) {
+      setError('Apple Sign In is still loading. Please retry in a moment.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      window.AppleID.auth.init({
+        clientId: appleClientId,
+        scope: 'name email',
+        redirectURI: appleRedirectUri,
+        state: nonce,
+        nonce,
+        usePopup: true,
+      });
+      const result = await window.AppleID.auth.signIn();
+      const authorizationCode = result.authorization?.code;
+      if (!authorizationCode) throw new Error('Apple did not return an authorization code.');
+      const response = await oauthSignIn('apple', '', nonce, authorizationCode);
+      onAuthenticatedRef.current(response.user, response.access_token);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Apple sign-in failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="modal-backdrop auth-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="auth-split-card" role="dialog" aria-modal="true" aria-label={mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : 'Reset password'} onMouseDown={(event) => event.stopPropagation()}>
+
+      {/* Left Brand Panel */}
+      <div className="auth-split-left">
+        <div className="auth-split-brand">
+          <div className="brand-mark">FP</div>
+          <div className="auth-brand-info"><strong>FreightPilot AI</strong><span>Global Logistics, Redefined</span></div>
+        </div>
+        <div className="auth-split-benefits">
+          <div className="benefit-item">
+            <div className="benefit-icon"><Icon name="shield" size={18}/></div>
+            <div className="benefit-text"><strong>Secure &amp; Multi-Provider Login</strong><p>Google, Apple &amp; SMS (OTP)</p></div>
+          </div>
+          <div className="benefit-item">
+            <div className="benefit-icon"><Icon name="check" size={18}/></div>
+            <div className="benefit-text"><strong>Enterprise-Grade Security</strong><p>Your data is always protected</p></div>
+          </div>
+          <div className="benefit-item">
+            <div className="benefit-icon"><Icon name="truck" size={18}/></div>
+            <div className="benefit-text"><strong>One Account, Full Platform</strong><p>Ship, Track, Pay &amp; Analyze</p></div>
+          </div>
+        </div>
+        <div className="auth-split-foot">© {new Date().getFullYear()} FreightPilot AI · Enterprise Platform</div>
+      </div>
+
+      {/* Right Form Panel */}
+      <div className="auth-split-right">
+        <div className="auth-form-brand" aria-label="FreightPilot">FREIGHT<span>PILOT</span></div>
+        <button className="auth-close-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={16}/></button>
+
+        <div className="auth-toggle-pill">
+          <button className={mode === 'login' ? 'active' : ''} type="button" onClick={() => { setMode('login'); setMethod('password'); setError(null); setSuccessMsg(null); setOtpRequested(false); }}>Sign In</button>
+          <button className={mode === 'register' ? 'active' : ''} type="button" onClick={() => { setMode('register'); setMethod('password'); setError(null); setSuccessMsg(null); }}>Create Account</button>
+        </div>
+
+        <div className="auth-right-head">
+          <h3>{mode === 'forgot' ? 'Reset Password' : mode === 'login' ? 'Welcome Back' : `Create ${role.toLowerCase()} account`}</h3>
+          <p>{mode === 'forgot' ? 'Enter your account email to receive reset instructions.' : mode === 'login' ? 'Sign in to your FreightPilot AI account' : 'Join FreightPilot AI — the intelligent freight platform.'}</p>
+        </div>
+
+        {mode === 'forgot' && (
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError(null);
+            setSuccessMsg(null);
+            try {
+              await requestPasswordReset(email);
+              setSuccessMsg('If an account exists for this email, a password reset link has been sent. Check your inbox.');
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to send reset email. Please try again.');
+            } finally {
+              setBusy(false);
+            }
+          }} className="form-stack auth-fields">
+            <div className="auth-input-group">
+              <span className="input-icon-slot"><Icon name="external" size={15}/></span>
+              <input className="auth-input-field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="Enter your registered email"/>
+            </div>
+            {error && <div className="inline-alert inline-alert-danger">{error}</div>}
+            {successMsg && <div className="inline-alert" style={{background:'rgba(244,237,224,0.1)',color:'#F4EDE0',border:'1px solid rgba(244,237,224,0.2)'}}>{successMsg}</div>}
+            <button className="btn-auth-submit" disabled={busy}>{busy ? 'Submitting…' : 'Send Reset Instructions'}</button>
+            <button type="button" className="auth-forgot-link" style={{display:'block',marginTop:8,textAlign:'center'}} onClick={() => { setMode('login'); setError(null); setSuccessMsg(null); }}>← Back to Sign In</button>
+          </form>
+        )}
+
+        {mode === 'reset-password' && (
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            if (!resetToken) {
+              setError('Invalid or missing reset token. Please request a new password reset link.');
+              return;
+            }
+            if (newPassword !== newPasswordConfirm) {
+              setError('Passwords do not match.');
+              return;
+            }
+            if (newPassword.length < 10) {
+              setError('Password must be at least 10 characters.');
+              return;
+            }
+            setBusy(true);
+            setError(null);
+            setSuccessMsg(null);
+            try {
+              await resetPassword(resetToken, newPassword);
+              setSuccessMsg('Password has been reset successfully. You can now sign in with your new password.');
+              setTimeout(() => { setMode('login'); setSuccessMsg(null); }, 3000);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to reset password. Please try again.');
+            } finally {
+              setBusy(false);
+            }
+          }} className="form-stack auth-fields">
+            <div className="auth-input-group">
+              <span className="input-icon-slot"><Icon name="shield" size={15}/></span>
+              <input className="auth-input-field" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={10} autoComplete="new-password" placeholder="Enter new password (min 10 characters)"/>
+            </div>
+            <div className="auth-input-group">
+              <span className="input-icon-slot"><Icon name="check" size={15}/></span>
+              <input className="auth-input-field" type="password" value={newPasswordConfirm} onChange={(event) => setNewPasswordConfirm(event.target.value)} required minLength={10} autoComplete="new-password" placeholder="Confirm new password"/>
+            </div>
+            {error && <div className="inline-alert inline-alert-danger">{error}</div>}
+            {successMsg && <div className="inline-alert" style={{background:'rgba(244,237,224,0.1)',color:'#F4EDE0',border:'1px solid rgba(244,237,224,0.2)'}}>{successMsg}</div>}
+            <button className="btn-auth-submit" disabled={busy}>{busy ? 'Resetting…' : 'Reset Password'}</button>
+            <button type="button" className="auth-forgot-link" style={{display:'block',marginTop:8,textAlign:'center'}} onClick={() => { setMode('login'); setError(null); setSuccessMsg(null); }}>← Back to Sign In</button>
+          </form>
+        )}
+
+        {mode === 'register' && <div className="role-selector auth-role-selector">
+          <button type="button" className={`btn btn-sm ${role === 'BUYER' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRole('BUYER')}>Buyer account</button>
+          <button type="button" className={`btn btn-sm ${role === 'SELLER' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRole('SELLER')}>Seller / Carrier</button>
+        </div>}
+
+        {mode === 'login' && method === 'password' && <div className="auth-social-stack">
+          <div className="google-signin-slot">
+            {googleClientId ? <div ref={googleButtonRef} className="google-signin-button"/> : <button type="button" className="btn-social" disabled><span className="social-symbol social-google"><GoogleBrandIcon /></span>Continue with Google</button>}
+          </div>
+          <button type="button" className="btn-social" onClick={() => void signInWithApple()} disabled={busy || !appleClientId || !appleRedirectUri}>
+            <span className="social-symbol social-apple"><AppleBrandIcon /></span>Continue with Apple
+          </button>
+          <button type="button" className="btn-social" onClick={() => { setMethod('phone'); setError(null); }}>
+            <span className="social-symbol social-phone"><PhoneBrandIcon /></span>Continue with Phone (OTP)
+          </button>
+          {(!googleClientId || !appleClientId) && <div className="auth-provider-note">Enable Google and Apple by adding their public client IDs to frontend/.env.local.</div>}
+        </div>}
+
+        {mode === 'login' && <div className="auth-or-divider"><span>or</span></div>}
+
+        {mode === 'login' && method === 'phone' ? <form onSubmit={otpRequested ? verifyPhoneCode : requestPhoneCode} className="form-stack auth-fields">
+          <div className="auth-input-group">
+            <span className="input-icon-slot"><Icon name="route" size={15}/></span>
+            <input className="auth-input-field" type="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} required pattern="\+[1-9]\d{7,14}" placeholder="+919876543210" autoComplete="tel"/>
+          </div>
+          {otpRequested && <div className="auth-input-group">
+            <span className="input-icon-slot"><Icon name="check" size={15}/></span>
+            <input className="auth-input-field" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} required inputMode="numeric" pattern="\d{6}" placeholder="6-digit SMS code" autoComplete="one-time-code"/>
+          </div>}
+          {error && <div className="inline-alert inline-alert-danger">{error}</div>}
+          <button className="btn-auth-submit" disabled={busy}>{busy ? 'Please wait…' : otpRequested ? 'Verify code & sign in' : 'Send SMS code'}</button>
+          {otpRequested && <button type="button" className="text-button" onClick={() => { setOtpRequested(false); setOtp(''); }}>Use a different number</button>}
+          <button type="button" className="auth-forgot-link" style={{display:'block',marginTop:8}} onClick={() => { setMethod('password'); setError(null); }}>← Back to email login</button>
+        </form> : (mode === 'register' || method === 'password') && <form onSubmit={submit} className="form-stack auth-fields">
+          <div className="auth-input-group">
+            <span className="input-icon-slot"><Icon name="external" size={15}/></span>
+            <input className="auth-input-field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="Enter your email"/>
+          </div>
+          <div className="auth-input-group">
+            <span className="input-icon-slot"><Icon name="shield" size={15}/></span>
+            <input className="auth-input-field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={mode === 'register' ? 10 : 1} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Enter your password"/>
+          </div>
+          {mode === 'register' && <>
+            {role === 'SELLER' && <>
+              <label>Company / Business name<input value={businessName} onChange={(event) => setBusinessName(event.target.value)} required placeholder="Apex Marine Freight Ltd."/></label>
+              <label>Business address<input value={businessAddress} onChange={(event) => setBusinessAddress(event.target.value)} required placeholder="Business address"/></label>
+              <label>Contact person<input value={contactPerson} onChange={(event) => setContactPerson(event.target.value)} required placeholder="Full name"/></label>
+            </>}
+            {role === 'BUYER' && <label>Company name <span className="optional-label">Optional</span><input value={businessName} onChange={(event) => setBusinessName(event.target.value)} placeholder="Company / organization"/></label>}
+            <label>Phone number {role === 'BUYER' && <span className="optional-label">Optional · E.164 format</span>}<input type="tel" value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} required={role === 'SELLER'} pattern="\+[1-9]\d{7,14}" placeholder="+919876543210" autoComplete="tel"/></label>
+          </>}
+          {mode === 'login' && <div className="auth-forgot-row"><button type="button" className="auth-forgot-link" onClick={() => { setMode('forgot'); setError(null); setSuccessMsg(null); }}>Forgot password?</button></div>}
+          {error && <div className="inline-alert inline-alert-danger">{error}</div>}
+          <button className="btn-auth-submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create account'}</button>
+        </form>}
+
+        <p className="fine-print auth-security-note" style={{marginTop:14}}>Social sign-in is verified by the FreightPilot API. Seller access remains subject to administrator approval.</p>
+      </div>
+    </div>
+  </div>;
 }
 
 export default function App(): React.ReactElement {
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPageState] = useState<Page>(() => {
+    const requested = window.location.hash.replace(/^#/, '') as Page;
+    return (['landing', 'overview', 'shipments', 'quotes', 'payments', 'copilot', 'risk', 'analytics', 'carriers', 'documents', 'settings'] as Page[]).includes(requested)
+      ? requested : 'landing';
+  });
+  const pageRef = useRef<Page>(page);
+  const pageHistory = useRef<Page[]>([]);
+  const setPage = useCallback((nextPage: Page) => {
+    if (pageRef.current === nextPage) return;
+    pageHistory.current.push(pageRef.current);
+    pageRef.current = nextPage;
+    const nextUrl = `${window.location.pathname}${window.location.search}${nextPage === 'landing' ? '' : `#${nextPage}`}`;
+    window.history.pushState({ freightPilotPage: nextPage }, '', nextUrl);
+    setPageState(nextPage);
+  }, []);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [activeShipment, setActiveShipment] = useState<Shipment | null>(null);
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -175,10 +525,50 @@ export default function App(): React.ReactElement {
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [newShipmentOpen, setNewShipmentOpen] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
+  const initialAuthRoute = (() => {
+    const pathname = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    if (pathname.endsWith('/register') || hash === 'register') return 'register' as const;
+    if (pathname.endsWith('/login') || hash === 'login') return 'login' as const;
+    if (pathname.startsWith('/reset-password') || hash.startsWith('reset-password')) return 'reset-password' as const;
+    return null;
+  })();
+  const [authOpen, setAuthOpen] = useState(() => initialAuthRoute !== null);
+  const [authInitialMode, setAuthInitialMode] = useState<'login' | 'register' | 'reset-password'>(initialAuthRoute ?? 'login');
+  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
+  const openAuth = (mode: 'login' | 'register' = 'login') => {
+    setAuthInitialMode(mode);
+    setAuthOpen(true);
+    const authPath = mode === 'register' ? '/register' : '/login';
+    if (window.location.pathname !== authPath) window.history.pushState({ auth: mode }, '', authPath);
+  };
+
+  // Extract reset password token from URL
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const token = searchParams.get('token');
+    if (token) {
+      setResetPasswordToken(token);
+      if (authInitialMode === 'reset-password') {
+        setAuthOpen(true);
+      }
+    }
+  }, []);
+  const closeAuth = () => {
+    setAuthOpen(false);
+    if (/\/(login|register)\/?$/i.test(window.location.pathname) || /^(login|register)$/i.test(window.location.hash.replace(/^#/, ''))) {
+      window.history.replaceState({ freightPilotPage: 'landing' }, '', '/');
+      pageRef.current = 'landing';
+      setPageState('landing');
+    }
+  };
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [health, setHealth] = useState<{ status: string; app: string; mode: string; database: string } | null>(null);
+  const [accountPhone, setAccountPhone] = useState('');
+  const [accountPhoneOtp, setAccountPhoneOtp] = useState('');
+  const [accountPhoneOtpSent, setAccountPhoneOtpSent] = useState(false);
+  const [phoneSettingsBusy, setPhoneSettingsBusy] = useState(false);
+  const [phoneSettingsMessage, setPhoneSettingsMessage] = useState('');
+  const [health, setHealth] = useState<{ status: string; service: string } | null>(null);
   const [search, setSearch] = useState('');
   const [trackingStatus, setTrackingStatus] = useState('IN_TRANSIT');
   const [trackingLocation, setTrackingLocation] = useState('');
@@ -186,6 +576,11 @@ export default function App(): React.ReactElement {
   const [trackingBusy, setTrackingBusy] = useState(false);
   const [assessmentBusy, setAssessmentBusy] = useState<string | null>(null);
   const [carrierBusy, setCarrierBusy] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteAccountConfirm, setDeleteAccountConfirm] = useState('');
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState('');
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -242,6 +637,25 @@ export default function App(): React.ReactElement {
     setPayments(paymentRows); setPaymentLoading(false);
   }, []);
 
+  useEffect(() => {
+    const initialUrl = `${window.location.pathname}${window.location.search}${page === 'landing' ? '' : `#${page}`}`;
+    window.history.replaceState({ freightPilotPage: page }, '', initialUrl);
+    const syncPageFromHistory = () => {
+      const requested = window.location.hash.replace(/^#/, '') as Page;
+      const next = (['landing', 'overview', 'shipments', 'quotes', 'payments', 'copilot', 'risk', 'analytics', 'carriers', 'documents', 'settings'] as Page[]).includes(requested)
+        ? requested : 'landing';
+      const previous = pageRef.current;
+      pageRef.current = next;
+      if (pageHistory.current[pageHistory.current.length - 1] === next) {
+        pageHistory.current.pop();
+      } else if (previous !== next) {
+        pageHistory.current.push(previous);
+      }
+      setPageState(next);
+    };
+    window.addEventListener('popstate', syncPageFromHistory);
+    return () => window.removeEventListener('popstate', syncPageFromHistory);
+  }, []);
   useEffect(() => { void loadPortfolio(); }, []); // initial API hydration
   useEffect(() => {
     if (page === 'payments' && shipments.length) void loadPayments(shipments);
@@ -249,10 +663,23 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     const token = getAuthToken();
     if (!token) return;
-    fetchCurrentUser().then(setCurrentUser).catch(() => { setAuthToken(null); setCurrentUser(null); });
+    fetchCurrentUser().then((user) => { setCurrentUser(user); setAccountPhone(user.phone_number || ''); }).catch(() => { setAuthToken(null); setCurrentUser(null); });
   }, []);
 
-  const unreadCount = notifications.filter((notification) => !notification.read_at).length;
+  // Periodic health check for Settings page
+  useEffect(() => {
+    if (page !== 'settings') return;
+    const interval = setInterval(async () => {
+      try {
+        const healthResult = await fetchHealth();
+        setHealth(healthResult);
+      } catch {
+        // Health check failed, keep previous state
+      }
+    }, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [page]);
+
   const filteredShipments = useMemo(() => shipments.filter((shipment) => `${shipment.id} ${shipment.cargo_type} ${shipment.origin} ${shipment.destination} ${shipment.status}`.toLowerCase().includes(search.toLowerCase())), [shipments, search]);
   const totalQuoteCount = analytics?.quote_count ?? shipments.reduce((sum, shipment) => sum + (shipment.quotes_count || 0), 0);
   const capturedSpend = analytics?.captured_spend_by_currency || [];
@@ -329,8 +756,88 @@ export default function App(): React.ReactElement {
     finally { setCarrierBusy(false); }
   };
 
-  const handleAuthSuccess = (user: UserProfile, token: string) => {
-    setAuthToken(token); setCurrentUser(user); setAuthOpen(false); showToast(`Signed in as ${user.email}.`); void loadPortfolio();
+  const handleAuthSuccess = useCallback((user: UserProfile, token: string) => {
+    setAuthToken(token);
+    setCurrentUser(user);
+    setAccountPhone(user.phone_number || '');
+    setAccountPhoneOtp('');
+    setAccountPhoneOtpSent(false);
+    setPhoneSettingsMessage('');
+    setAuthOpen(false);
+    if (/\/(login|register)\/?$/i.test(window.location.pathname)) {
+      window.history.replaceState({ freightPilotPage: 'landing' }, '', '/');
+    }
+    setPage('overview');
+    showToast(`Signed in as ${user.email}.`);
+    void loadPortfolio();
+  }, [loadPortfolio, setPage, showToast]);
+
+  const saveAccountPhone = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!currentUser) return;
+    setPhoneSettingsBusy(true);
+    setPhoneSettingsMessage('');
+    try {
+      const updated = await updateAccountPhone(accountPhone.trim());
+      setCurrentUser(updated);
+      setAccountPhone(updated.phone_number || accountPhone.trim());
+      setAccountPhoneOtpSent(false);
+      setAccountPhoneOtp('');
+      setPhoneSettingsMessage('Phone number saved. Send a verification code to confirm ownership.');
+    } catch (reason) {
+      setPhoneSettingsMessage(reason instanceof Error ? reason.message : 'Could not save the phone number.');
+    } finally {
+      setPhoneSettingsBusy(false);
+    }
+  };
+
+  const sendAccountPhoneOtp = async () => {
+    if (!currentUser || !accountPhone.trim()) return;
+    setPhoneSettingsBusy(true);
+    setPhoneSettingsMessage('');
+    try {
+      // Use Firebase Phone Authentication for production
+      // The backend expects Firebase ID token verification
+      // We need to initialize Firebase reCAPTCHA and send OTP
+      const { createRecaptchaVerifier, sendPhoneOtp } = await import('./lib/firebaseAuth');
+      const recaptchaVerifier = createRecaptchaVerifier('recaptcha-container');
+      const { confirmationResult } = await sendPhoneOtp(accountPhone.trim(), recaptchaVerifier);
+      // Store confirmationResult for verification
+      (window as any).__phoneAuthConfirmationResult = confirmationResult;
+      setAccountPhoneOtpSent(true);
+      setPhoneSettingsMessage('Verification code sent. Check your phone.');
+    } catch (reason) {
+      setPhoneSettingsMessage(reason instanceof Error ? reason.message : 'Could not send the verification code.');
+    } finally {
+      setPhoneSettingsBusy(false);
+    }
+  };
+
+  const confirmAccountPhoneOtp = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!currentUser) return;
+    setPhoneSettingsBusy(true);
+    setPhoneSettingsMessage('');
+    try {
+      // Verify OTP using Firebase
+      const { verifyPhoneOtp } = await import('./lib/firebaseAuth');
+      const confirmationResult = (window as any).__phoneAuthConfirmationResult;
+      if (!confirmationResult) {
+        throw new Error('No verification session found. Please request a new code.');
+      }
+      const result = await verifyPhoneOtp(confirmationResult, accountPhoneOtp.trim());
+      // Link the verified phone to the user account via backend
+      const userData = await linkFirebasePhone(result.idToken, result.phoneNumber);
+      setCurrentUser(userData);
+      setAccountPhoneOtpSent(false);
+      setAccountPhoneOtp('');
+      setPhoneSettingsMessage('Phone number verified successfully.');
+      showToast('Phone number verified.');
+    } catch (reason) {
+      setPhoneSettingsMessage(reason instanceof Error ? reason.message : 'The verification code was not accepted.');
+    } finally {
+      setPhoneSettingsBusy(false);
+    }
   };
 
   const goToPayment = (quote: Quote) => { setSelectedQuote(quote); setPage('payments'); };
@@ -344,40 +851,118 @@ export default function App(): React.ReactElement {
   const onPaymentStatus = useCallback((message: string) => showToast(message), [showToast]);
 
   const pageMeta: Record<Page, { title: string; subtitle: string }> = {
-    overview: { title: 'Overview', subtitle: 'A live view of your freight procurement operations.' },
-    shipments: { title: 'Shipments', subtitle: 'Manage freight requests, operational status and tracking history.' },
-    quotes: { title: 'Freight quotes', subtitle: 'Compare carrier offers using normalized cost, transit and risk data.' },
-    risk: { title: 'Risk manager', subtitle: 'Review explainable quote-level signals before committing spend.' },
-    copilot: { title: 'AI copilot', subtitle: 'Use shipment and quote records to generate a structured procurement review.' },
+    landing: { title: 'Landing', subtitle: 'Cinematic ocean logistics overview' },
+    overview: { title: 'Dashboard Overview', subtitle: "Here's what's happening with your logistics today." },
+    shipments: { title: 'Shipments', subtitle: 'Track and manage all your shipments in real time.' },
+    quotes: { title: 'Get Quotes', subtitle: 'Compare carrier offers using normalized cost, transit and risk data.' },
     payments: { title: 'Payments', subtitle: 'Review payment activity and complete Sandbox checkout for a selected quote.' },
-    analytics: { title: 'Analytics', subtitle: 'Understand shipment volume, quote coverage and captured spend by currency.' },
+    copilot: { title: 'AI Copilot', subtitle: 'Your AI logistics assistant, powered by Gemini.' },
+    risk: { title: 'Risk Engine', subtitle: 'Explainable rule-based assessment of carrier, route and quote risk.' },
+    analytics: { title: 'Analytics', subtitle: 'Operational insights and performance trends.' },
+    carriers: { title: 'Carriers', subtitle: 'Browse and compare freight carrier catalog and performance.' },
+    documents: { title: 'Documents', subtitle: 'Manage shipment documents, bills of lading and customs paperwork.' },
     settings: { title: 'Settings', subtitle: 'Review connected services, environment configuration and account access.' },
   };
 
   const currentPage = pageMeta[page];
-  const topHeader = <header className="topbar"><div className="topbar-mobile-brand"><div className="brand-mark">FP</div><span>FreightPilot <b>AI</b></span></div><div className="topbar-breadcrumb"><span>Workspace</span><Icon name="chevron" size={14}/><strong>{currentPage.title}</strong></div><div className="topbar-actions"><div className="environment-pill"><span className="environment-dot"/> {health?.mode === 'production' ? 'LIVE ENVIRONMENT' : 'SANDBOX DEMO'}</div><div className="notification-anchor"><button className={`icon-button topbar-icon ${showNotifications ? 'active' : ''}`} onClick={() => setShowNotifications(!showNotifications)} aria-label="Notifications"><Icon name="bell"/><span className="notification-count">{unreadCount > 9 ? '9+' : unreadCount}</span></button>{showNotifications && <div className="notification-popover"><div className="popover-title"><strong>Notifications</strong><span>{unreadCount} unread</span></div>{notifications.length === 0 ? <p className="popover-empty">No notifications yet.</p> : notifications.slice(0, 6).map((item) => <button className={`notification-row ${item.read_at ? 'read' : ''}`} key={item.id} onClick={async () => { await markNotificationRead(item.id); setNotifications((rows) => rows.map((row) => row.id === item.id ? { ...row, read_at: new Date().toISOString() } : row)); if (item.shipment_id) { const target = shipments.find((shipment) => shipment.id === item.shipment_id); if (target) { await selectShipment(target.id); setPage('shipments'); } } }}><strong>{item.title}</strong><span>{item.message}</span><small>{dateTime(item.created_at)}</small></button>)}</div>}</div><button className="profile-button" onClick={() => { if (currentUser) { setAuthToken(null); setCurrentUser(null); showToast('Signed out.'); void loadPortfolio(); } else { setAuthOpen(true); } }}><span className="avatar">{currentUser ? currentUser.email.slice(0, 1).toUpperCase() : 'G'}</span><span className="profile-copy"><b>{currentUser ? currentUser.email.split('@')[0] : 'Guest user'}</b><small>{currentUser ? currentUser.role : 'Demo access'}</small></span><Icon name="chevron" size={14}/></button></div></header>;
 
-  const renderOverview = () => <>
-    <div className="welcome-row"><div><div className="eyebrow">OPERATIONS SNAPSHOT · {new Intl.DateTimeFormat('en', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date()).toUpperCase()}</div><h2>Good operations start with clear decisions.</h2><p>Monitor your shipment portfolio, compare freight offers and control procurement risk.</p></div><button className="btn btn-primary" onClick={() => setNewShipmentOpen(true)}><Icon name="plus" size={17}/> New shipment</button></div>
-    <div className="stats-grid">
-      <StatCard label="Total shipments" value={analytics?.shipment_count ?? shipments.length} caption={`${analytics?.delivered_shipments ?? 0} delivered`} icon="shipments" tint="tint-blue"/>
-      <StatCard label="Active shipments" value={analytics?.active_shipments ?? shipments.filter((item) => !['DELIVERED', 'CANCELLED'].includes(item.status)).length} caption="Across current portfolio" icon="truck" tint="tint-purple"/>
-      <StatCard label="Quotes received" value={totalQuoteCount} caption="Stored carrier offers" icon="quotes" tint="tint-teal"/>
-      <StatCard label="High-attention quotes" value={analytics?.high_attention_quotes ?? 0} caption="Require human review" icon="risk" tint="tint-amber"/>
-    </div>
-    <div className="dashboard-grid">
-      <section className="panel panel-main"><div className="panel-header"><div><span className="eyebrow">PORTFOLIO</span><h3>Recent shipments</h3><p>Latest records stored in your database.</p></div><button className="link-button" onClick={() => setPage('shipments')}>View all <Icon name="arrow" size={15}/></button></div>
-        {shipments.length === 0 ? <EmptyState title="No shipments yet" description="Create a shipment request to start comparing freight offers." action={<button className="btn btn-primary" onClick={() => setNewShipmentOpen(true)}>Create shipment</button>}/> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Shipment / route</th><th>Ready date</th><th>Quotes</th><th>Status</th><th/></tr></thead><tbody>{shipments.slice(0, 6).map((shipment) => <tr key={shipment.id} onClick={() => { void selectShipment(shipment.id); setPage('shipments'); }} className="clickable-row"><td><strong>{shipment.cargo_type}</strong><span className="table-secondary">{shipment.origin} <span className="route-arrow">→</span> {shipment.destination}</span></td><td>{shortDate(shipment.ready_date)}</td><td><span className="count-pill">{shipment.quotes_count ?? '—'}</span></td><td><StatusBadge value={shipment.status}/></td><td><Icon name="chevron" size={16}/></td></tr>)}</tbody></table></div>}
-      </section>
-      <section className="panel"><div className="panel-header"><div><span className="eyebrow">PAYMENT POSITION</span><h3>Captured spend</h3><p>Verified captured payments only.</p></div><div className="panel-icon"><Icon name="wallet"/></div></div>
-        {capturedSpend.length ? <div className="spend-list">{capturedSpend.map((spend) => <div className="spend-row" key={spend.currency}><div><span className="spend-currency">{spend.currency}</span><strong>{money(spend.amount, spend.currency)}</strong></div><span className="spend-caption">Captured</span></div>)}</div> : <div className="empty-inline"><div className="empty-icon-soft"><Icon name="wallet"/></div><strong>No captured spend</strong><span>Payments will appear here after PayPal confirms a capture.</span></div>}
-        <div className="panel-divider"/><div className="mini-metric-row"><div><span>Payment attempts</span><strong>{analytics?.payment_attempts ?? 0}</strong></div><div><span>Captured</span><strong>{analytics?.captured_payments ?? 0}</strong></div></div>
-      </section>
-    </div>
-    <div className="dashboard-grid dashboard-grid-lower"><section className="panel"><div className="panel-header"><div><span className="eyebrow">SHIPMENT PIPELINE</span><h3>Status distribution</h3><p>Current database status by shipment.</p></div></div><StatusDistribution counts={analytics?.shipment_status_counts || {}} total={analytics?.shipment_count || 0}/></section>
-      <section className="panel"><div className="panel-header"><div><span className="eyebrow">CARRIER MARKETPLACE</span><h3>Carrier quote activity</h3><p>Average quote amounts grouped by currency.</p></div><button className="link-button" onClick={() => setPage('analytics')}>Details <Icon name="arrow" size={15}/></button></div><CarrierPreview items={carrierPerformance.slice(0, 4)}/></section></div>
-    <div className="source-note"><Icon name="shield" size={15}/> Data on this dashboard is read from the backend database. Synthetic demo quotes are labeled at quote level and are not live carrier offers.</div>
-  </>;
+  const renderLanding = () => <div className="landing-page">
+    <section className="landing-hero" id="home">
+      <nav className="landing-nav">
+        <button className="landing-brand" onClick={() => setPage('landing')} aria-label="FreightPilot AI home">
+          <span className="brand-mark">FP</span>
+          <span className="landing-brand-copy"><strong>FreightPilot <i>AI</i></strong><small>GLOBAL LOGISTICS INTELLIGENCE</small></span>
+        </button>
+        <div className="landing-nav-links">
+          <a href="#home">Home</a>
+          <a href="#features">Capabilities</a>
+          <a href="#workflow">How it works</a>
+          <a href="#contact">Contact</a>
+        </div>
+        <div className="landing-nav-actions">
+          <ThemeToggleButton compact />
+          <FamilyReceiveComponent
+            triggerLabel="Workspace"
+            title="Open your workspace?"
+            description="Continue to your logistics workspace to manage shipments, compare carrier quotes and review payments."
+            confirmLabel="Continue"
+            cancelLabel="Stay here"
+            onConfirm={() => { if (currentUser) setPage('overview'); else openAuth('login'); }}
+          />
+          <button className="landing-signin" onClick={() => openAuth('login')}>Sign in</button>
+          <button className="btn btn-coral" onClick={() => openAuth('register')}>Create account <Icon name="arrow" size={15}/></button>
+        </div>
+      </nav>
+
+      <div className="landing-hero-main">
+        <div className="landing-content">
+          <div className="landing-badge"><span className="badge-pulse"/><Icon name="spark" size={14}/> MARITIME LOGISTICS INTELLIGENCE</div>
+          <h1 className="landing-title">Navigate Freight. <span className="hero-coral">Move Smarter.</span></h1>
+          <p className="landing-subtitle">Plan shipments, compare carrier quotes and evaluate operational risk in one connected workspace engineered for confident maritime procurement decisions.</p>
+          <div className="landing-cta-group">
+            <button className="btn btn-coral" onClick={() => openAuth('register')}>Get started <Icon name="arrow" size={16}/></button>
+            <button className="btn btn-glass-hero" onClick={() => openAuth('login')}>Sign in</button>
+          </div>
+          <div className="landing-proof-row">
+            <span><i className="proof-check"><Icon name="check" size={12}/></i> Shipment status visibility</span>
+            <span><i className="proof-check"><Icon name="check" size={12}/></i> Explainable risk review</span>
+            <span><i className="proof-check"><Icon name="check" size={12}/></i> Secure PayPal Sandbox checkout</span>
+          </div>
+        </div>
+
+        <div className="landing-hero-scene-wrap" aria-label="Yacht moving across open water">
+          <div className="landing-hero-video-frame">
+            <video
+              className="landing-hero-video"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              poster="/images/yacht-poster.png"
+              aria-label="A yacht cruising across open ocean with moving water"
+            >
+              <source src="/videos/yacht-motion.mp4" type="video/mp4" />
+            </video>
+            <div className="landing-hero-video-shade" aria-hidden="true" />
+            <div className="landing-hero-video-caption"><span className="hero-live-dot" /> LIVE OCEAN VISUAL</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="landing-hero-footer">
+        <span>ENTERPRISE MARITIME PROCUREMENT &amp; RISK MANAGEMENT</span>
+        <span>INTELLIGENCE <i/> INTEGRATION <i/> CERTAINTY</span>
+      </div>
+    </section>
+
+    <section className="landing-workflow" id="workflow">
+      <span id="features" className="landing-anchor" aria-hidden="true"/>
+      <div className="workflow-copy"><span className="eyebrow">A CLEARER PROCUREMENT WORKFLOW</span><h2>See the whole journey.<br/><em>Choose with context.</em></h2><p>FreightPilot brings the core information together so teams can evaluate options, understand risk and track what has been confirmed—without confusing estimated data with live carrier feeds.</p><button className="btn btn-coral" onClick={() => openAuth('register')}>Enter platform <Icon name="arrow" size={15}/></button></div>
+      <div className="workflow-steps">
+        <div className="workflow-step"><span>01</span><div><strong>Describe the shipment</strong><small>Capture cargo, route, dates and currency.</small></div></div>
+        <div className="workflow-step"><span>02</span><div><strong>Compare available offers</strong><small>Review stored quote totals, terms and context.</small></div></div>
+        <div className="workflow-step"><span>03</span><div><strong>Review before committing</strong><small>Use deterministic risk signals and Copilot as decision support.</small></div></div>
+        <div className="workflow-step"><span>04</span><div><strong>Track confirmed outcomes</strong><small>Follow shipment events and backend-confirmed payment status.</small></div></div>
+      </div>
+    </section>
+
+    <div id="contact"><Contact5Section /></div>
+    <footer className="landing-footer"><div className="landing-brand"><span className="brand-mark">FP</span><span className="landing-brand-copy"><strong>FreightPilot <i>AI</i></strong><small>GLOBAL LOGISTICS INTELLIGENCE</small></span></div><p>Clearer freight decisions, from first request to final confirmation.</p><span>© {new Date().getFullYear()} FreightPilot AI</span></footer>
+  </div>;
+
+  const renderOverview = () => (
+    <FreightOverview
+      analytics={analytics}
+      shipments={shipments}
+      payments={payments}
+      quotes={quotes}
+      loading={loading}
+      onNavigate={(nextPage) => setPage(nextPage)}
+      onCreateShipment={() => setNewShipmentOpen(true)}
+      onSelectShipment={(shipment) => { void selectShipment(shipment.id); setPage('shipments'); }}
+    />
+  );
 
   const renderShipments = () => <>
     <div className="toolbar-row"><div className="search-box"><Icon name="search" size={17}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search shipments, route or status…"/></div><button className="btn btn-primary" onClick={() => setNewShipmentOpen(true)}><Icon name="plus" size={16}/> New shipment</button></div>
@@ -397,8 +982,23 @@ export default function App(): React.ReactElement {
   const renderRisk = () => {
     const highRisk = quotes.filter((quote) => quote.assessment && ['HIGH_ATTENTION', 'REVIEW'].includes(quote.assessment.label));
     const unassessed = quotes.filter((quote) => !quote.assessment);
+    const avgScore = quotes.filter(q => q.assessment?.score != null).reduce((sum, q) => sum + (q.assessment?.score || 0), 0) / (quotes.filter(q => q.assessment?.score != null).length || 1);
     return <>
-      <div className="risk-hero"><div className="risk-hero-icon"><Icon name="shield" size={26}/></div><div><span className="eyebrow">EXPLAINABLE RISK ENGINE</span><h3>Evaluate the offer, not just the price.</h3><p>Assessments are generated by the backend using quote terms, price benchmarks and shipment constraints. They are decision support—not a carrier credit rating.</p></div><div className="risk-hero-metrics"><div><strong>{highRisk.length}</strong><span>Review / high attention</span></div><div><strong>{unassessed.length}</strong><span>Not assessed</span></div></div></div>
+      <div className="risk-hero">
+        <div className="risk-hero-icon"><Icon name="shield" size={26}/></div>
+        <div>
+          <span className="eyebrow">EXPLAINABLE RISK ENGINE</span>
+          <h3>Evaluate the offer, not just the price.</h3>
+          <p>Assessments are generated by the backend using quote terms, price benchmarks and shipment constraints. They are decision support—not a carrier credit rating.</p>
+        </div>
+        <div className="risk-hero-metrics">
+          <div><strong>{highRisk.length}</strong><span>Review / high attention</span></div>
+          <div><strong>{unassessed.length}</strong><span>Not assessed</span></div>
+        </div>
+        <div className="risk-gauge-box">
+          <SvgRiskGauge score={quotes.length ? Math.round(avgScore) : undefined} />
+        </div>
+      </div>
       <div className="context-strip"><div className="context-icon"><Icon name="route"/></div><div className="context-copy"><span className="eyebrow">SHIPMENT SCOPE</span><strong>{activeShipment ? routeName(activeShipment) : 'No shipment selected'}</strong><span>{activeShipment?.cargo_type || 'Select a shipment to view risk assessments.'}</span></div><select value={activeShipment?.id || ''} onChange={(event) => void selectShipment(event.target.value)} disabled={!shipments.length}>{shipments.map((shipment) => <option key={shipment.id} value={shipment.id}>{shipment.cargo_type} · {shipment.origin} → {shipment.destination}</option>)}</select></div>
       {quotes.length === 0 ? <EmptyState title="No quotes to assess" description="Select a shipment that has stored quote records."/> : <section className="panel table-panel"><div className="panel-header"><div><span className="eyebrow">QUOTE RISK REGISTER</span><h3>Risk assessments <span className="subtle-count">{quotes.length}</span></h3><p>Use Re-assess to recalculate against the current shipment's peer quotes.</p></div><button className="btn btn-secondary btn-sm" onClick={async () => { for (const quote of quotes) await handleAssess(quote); }}>Assess all quotes</button></div><div className="risk-record-list">{quotes.map((quote) => <div className="risk-record" key={quote.id}><div className="risk-score-ring" data-tone={riskTone(quote.assessment?.label)}><strong>{quote.assessment?.score ?? '—'}</strong><small>/100</small></div><div className="risk-record-main"><div className="risk-record-heading"><strong>{quote.provider_label}</strong><span className={`status-badge ${riskTone(quote.assessment?.label)}`}>{riskLabel(quote.assessment?.label)}</span></div><span className="table-secondary">{quote.reference} · {money(quote.total_amount, quote.currency)} · {quote.transit_days ? `${quote.transit_days} day transit` : 'Transit time not specified'}</span>{quote.assessment?.flags?.length ? <div className="flag-chips">{quote.assessment.flags.slice(0, 3).map((flag) => <span className={`flag-chip ${flag.severity.toLowerCase()}`} key={flag.code}>{flag.severity}: {flag.title}</span>)}</div> : <span className="table-secondary">{quote.assessment ? 'No rule flags were triggered.' : 'No stored assessment. Run the risk engine to evaluate this offer.'}</span>}</div><button className="btn btn-secondary btn-sm" onClick={() => void handleAssess(quote)} disabled={assessmentBusy === quote.id}>{assessmentBusy === quote.id ? 'Assessing…' : quote.assessment ? 'Re-assess' : 'Assess quote'}</button></div>)}</div></section>}
       <div className="source-note"><Icon name="shield" size={15}/> Model output is deterministic, versioned rule-based risk assessment. Do not describe it as a trained ML prediction unless a validated model is deployed.</div>
@@ -409,6 +1009,7 @@ export default function App(): React.ReactElement {
     <div className="copilot-intro"><div className="copilot-orb"><Icon name="spark" size={30}/></div><div><span className="eyebrow">FREIGHTPILOT INTELLIGENCE</span><h3>Make your next freight decision with evidence.</h3><p>Copilot compares selected quote records and returns advantages, concerns, missing information and follow-up questions.</p></div></div>
     <div className="copilot-layout"><section className="panel copilot-selection"><div className="panel-header"><div><span className="eyebrow">ANALYSIS INPUT</span><h3>Select quote offers</h3><p>{activeShipment ? routeName(activeShipment) : 'Choose a shipment first.'}</p></div><select value={activeShipment?.id || ''} onChange={(event) => void selectShipment(event.target.value)} disabled={!shipments.length}>{shipments.map((shipment) => <option key={shipment.id} value={shipment.id}>{shipment.cargo_type}</option>)}</select></div>{quotes.length ? <div className="copilot-quote-options">{quotes.map((quote) => <label key={quote.id} className="copilot-quote-option"><input type="checkbox" checked={copilotQuoteIds.includes(quote.id)} onChange={(event) => setCopilotQuoteIds((ids) => event.target.checked ? [...ids, quote.id] : ids.filter((id) => id !== quote.id))}/><span className="option-carrier"><strong>{quote.provider_label}</strong><small>{quote.reference}</small></span><strong>{money(quote.total_amount, quote.currency)}</strong></label>)}</div> : <EmptyState title="No quote records" description="Create or select a shipment with quote offers before requesting analysis."/>}<button className="btn btn-primary btn-full" onClick={() => void handleRunCopilot()} disabled={copilotBusy || copilotQuoteIds.length === 0}><Icon name="spark" size={16}/>{copilotBusy ? 'Analyzing quote data…' : 'Analyze selected quotes'}</button><p className="fine-print">Analysis is read-only. Copilot cannot create shipments, commit payments or change operational status.</p></section>
       <section className="panel copilot-output"><div className="panel-header"><div><span className="eyebrow">DECISION BRIEF</span><h3>Procurement analysis</h3><p>Evidence-based summary from the backend.</p></div><div className="ai-tag"><Icon name="spark" size={13}/> AI / RULES</div></div>{!copilotResult ? <div className="copilot-placeholder"><div className="placeholder-art"><div/><div/><div/><Icon name="spark" size={23}/></div><strong>Your analysis will appear here</strong><span>Select one or more offers and run the copilot comparison.</span></div> : <div className="analysis-content"><div className="analysis-summary"><span className="eyebrow">SUMMARY</span><p>{copilotResult.summary}</p></div><div className="analysis-section"><h4>Quote-by-quote review</h4>{copilotResult.comparison.map((detail) => { const quote = quotes.find((item) => item.id === detail.quote_id); return <div className="comparison-detail" key={detail.quote_id}><strong>{quote?.provider_label || detail.quote_id}</strong><div className="pros-cons"><div><span className="positive-label">Advantages</span>{detail.advantages.length ? detail.advantages.map((text, i) => <p key={i}><Icon name="check" size={13}/>{text}</p>) : <p>None provided.</p>}</div><div><span className="negative-label">Concerns</span>{detail.concerns.length ? detail.concerns.map((text, i) => <p key={i}><Icon name="warning" size={13}/>{text}</p>) : <p>None provided.</p>}</div></div></div>; })}</div>{copilotResult.missing_information.length > 0 && <div className="analysis-section"><h4>Missing information</h4><ul>{copilotResult.missing_information.map((text, i) => <li key={i}>{text}</li>)}</ul></div>}{copilotResult.next_questions.length > 0 && <div className="analysis-section"><h4>Questions to resolve</h4><ul>{copilotResult.next_questions.map((text, i) => <li key={i}>{text}</li>)}</ul></div>}<p className="fine-print">{copilotResult.disclaimer}</p></div>}</section></div>
+    <AiCopilotChat shipmentId={activeShipment?.id} role={currentUser?.role} />
   </>;
 
   const renderPayments = () => <>
@@ -416,21 +1017,154 @@ export default function App(): React.ReactElement {
     <section className="panel table-panel"><div className="panel-header"><div><span className="eyebrow">TRANSACTION LEDGER</span><h3>Payment history <span className="subtle-count">{payments.length}</span></h3><p>Records are read from the payment tables for all visible shipments.</p></div><button className="btn btn-secondary btn-sm" onClick={() => void loadPayments(shipments)} disabled={paymentLoading}><Icon name="refresh" size={14}/>{paymentLoading ? 'Refreshing…' : 'Refresh'}</button></div>{paymentLoading ? <LoadingPanel label="Loading payment records…"/> : payments.length === 0 ? <EmptyState title="No payment transactions" description="A payment record appears here when a PayPal order has been created for a stored quote."/> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Transaction</th><th>Quote</th><th>Amount</th><th>Provider</th><th>Created</th><th>Status</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.payment_id}><td><strong className="mono">{payment.payment_id.slice(0, 12)}…</strong><span className="table-secondary">{payment.provider_order_id}</span></td><td className="mono">{payment.quote_id.slice(0, 14)}…</td><td><strong>{money(payment.amount, payment.currency)}</strong></td><td>PayPal {payment.provider.includes('sandbox') ? 'Sandbox' : ''}</td><td>{dateTime(payment.created_at)}</td><td><StatusBadge value={payment.status}/></td></tr>)}</tbody></table></div>}</section>
   </>;
 
-  const renderAnalytics = () => <>
-    <div className="stats-grid analytics-stats"><StatCard label="Shipment volume" value={analytics?.shipment_count ?? 0} caption="Total stored requests" icon="shipments" tint="tint-blue"/><StatCard label="Quote coverage" value={totalQuoteCount} caption="Offers across visible shipments" icon="quotes" tint="tint-teal"/><StatCard label="Captured transactions" value={analytics?.captured_payments ?? 0} caption={`Of ${analytics?.payment_attempts ?? 0} attempts`} icon="payments" tint="tint-purple"/><StatCard label="Risk attention" value={analytics?.high_attention_quotes ?? 0} caption="Risk assessments scoring for review" icon="risk" tint="tint-amber"/></div>
-    <div className="dashboard-grid"><section className="panel"><div className="panel-header"><div><span className="eyebrow">OPERATIONAL MIX</span><h3>Shipment status breakdown</h3><p>Counts from the shipment table.</p></div></div><StatusDistribution counts={analytics?.shipment_status_counts || {}} total={analytics?.shipment_count || 0}/></section><section className="panel"><div className="panel-header"><div><span className="eyebrow">FINANCIAL RECORDS</span><h3>Captured spend by currency</h3><p>Amounts are intentionally not summed across currencies.</p></div></div>{capturedSpend.length ? <div className="spend-list">{capturedSpend.map((spend) => <div className="spend-row" key={spend.currency}><div><span className="spend-currency">{spend.currency}</span><strong>{money(spend.amount, spend.currency)}</strong></div><span className="spend-caption">Verified captures</span></div>)}</div> : <div className="empty-inline"><strong>No captured spend</strong><span>Verified payment captures will be grouped here by currency.</span></div>}</section></div>
+  const renderAnalytics = () => {
+    const now = new Date();
+    const activityPoints = Array.from({ length: 6 }, (_, index) => {
+      const month = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
+      const count = shipments.filter((shipment) => {
+        const created = new Date(shipment.created_at);
+        return !Number.isNaN(created.getTime()) && created.getFullYear() === month.getFullYear() && created.getMonth() === month.getMonth();
+      }).length;
+      return { label: new Intl.DateTimeFormat('en', { month: 'short' }).format(month), value: count };
+    });
+    const quoteCountsByCarrier = carrierPerformance.slice(0, 7).map((carrier) => ({ month: carrier.carrier.slice(0, 8), amount: carrier.quote_count }));
+    return <>
+    <div className="stats-grid analytics-stats"><StatCard label="Shipment volume" value={analytics?.shipment_count ?? 0} caption="Total stored requests" icon="shipments" tint="tint-coral"/><StatCard label="Quote coverage" value={totalQuoteCount} caption="Offers across visible shipments" icon="quotes" tint="tint-cream"/><StatCard label="Captured transactions" value={analytics?.captured_payments ?? 0} caption={`Of ${analytics?.payment_attempts ?? 0} attempts`} icon="payments" tint="tint-coral"/><StatCard label="Risk attention" value={analytics?.high_attention_quotes ?? 0} caption="Risk assessments scoring for review" icon="risk" tint="tint-coral"/></div>
+    <div className="dashboard-grid"><section className="panel"><div className="panel-header"><div><span className="eyebrow">OPERATIONAL MIX</span><h3>Shipment status breakdown</h3><p>Counts from the shipment table.</p></div></div><SvgDonutChart counts={analytics?.shipment_status_counts || {}} total={analytics?.shipment_count || 0}/></section><section className="panel"><div className="panel-header"><div><span className="eyebrow">FINANCIAL RECORDS</span><h3>Captured spend by currency</h3><p>Amounts are intentionally not summed across currencies.</p></div></div>{capturedSpend.length ? <div className="spend-list">{capturedSpend.map((spend) => <div className="spend-row" key={spend.currency}><div><span className="spend-currency">{spend.currency}</span><strong>{money(spend.amount, spend.currency)}</strong></div><span className="spend-caption">Verified captures</span></div>)}</div> : <div className="empty-inline"><strong>No captured spend</strong><span>Verified payment captures will be grouped here by currency.</span></div>}</section></div>
+    <div className="dashboard-grid dashboard-grid-lower">
+      <section className="panel">
+        <div className="panel-header"><div><span className="eyebrow">VOLUME TREND</span><h3>Shipment creation by month</h3><p>Actual counts grouped by stored creation dates.</p></div></div>
+        <SvgAreaChart points={activityPoints} />
+      </section>
+      <section className="panel">
+        <div className="panel-header"><div><span className="eyebrow">CARRIER ACTIVITY</span><h3>Stored quote count</h3><p>Quote volumes by carrier; no cross-currency amounts are combined.</p></div></div>
+        <SvgBarComparison items={quoteCountsByCarrier} />
+      </section>
+    </div>
     <section className="panel table-panel"><div className="panel-header"><div><span className="eyebrow">CARRIER COMPARISON</span><h3>Quote activity by carrier</h3><p>Grouped from stored quotes. Synthetic demo offers may be included.</p></div></div><CarrierTable items={carrierPerformance}/></section>
     <div className="source-note"><Icon name="database" size={15}/> Data scope: {analytics?.data_scope || 'Unavailable'}. Analytics are calculated from persisted records; no cross-currency total is produced.</div>
   </>;
+  };
 
   const renderSettings = () => <>
-    <section className="panel settings-panel"><div className="panel-header"><div><span className="eyebrow">SERVICE HEALTH</span><h3>Connected services</h3><p>Configuration visibility only; secrets are never shown in the browser.</p></div></div><div className="settings-list"><SettingRow icon="activity" title="FastAPI backend" detail={apiBaseUrl} value={health?.status === 'ok' ? 'Connected' : 'Unavailable'} good={health?.status === 'ok'}/><SettingRow icon="database" title="Database" detail="SQLite / SQLAlchemy configured by backend" value={health?.database || 'Unknown'} good={health?.database === 'configured'}/><SettingRow icon="wallet" title="PayPal JavaScript SDK" detail="VITE_PAYPAL_CLIENT_ID" value={paypalClientId && !paypalClientId.toLowerCase().includes('replace') ? 'Client ID configured' : 'Not configured'} good={Boolean(paypalClientId && !paypalClientId.toLowerCase().includes('replace'))}/><SettingRow icon="spark" title="AI Copilot" detail="Provider and API key are configured on the backend" value="Backend-managed" good={null}/><SettingRow icon="truck" title="Live carrier integrations" detail={carrierCatalog?.note || 'Carrier adapter availability reported by backend.'} value={carrierCatalog?.live_integrations_available ? 'Available' : 'Not configured'} good={Boolean(carrierCatalog?.live_integrations_available)}/></div></section>
-    <div className="settings-grid"><section className="panel"><div className="panel-header"><div><span className="eyebrow">APPLICATION MODE</span><h3>Environment</h3></div><span className="environment-pill"><span className="environment-dot"/>{health?.mode || 'Unknown'}</span></div><div className="setting-description"><p>Current backend mode is reported by <code>/health</code>. The demo environment should use PayPal Sandbox and clearly mark synthetic carrier data.</p><div className="detail-line"><span>API base URL</span><strong>{apiBaseUrl}</strong></div><div className="detail-line"><span>Signed-in account</span><strong>{currentUser?.email || 'Guest / demo'}</strong></div><div className="detail-line"><span>Data scope</span><strong>{analytics?.data_scope || 'Unavailable'}</strong></div></div></section><section className="panel"><div className="panel-header"><div><span className="eyebrow">DEMO CONTROLS</span><h3>Seed data</h3><p>Reset synthetic demo content for a fresh presentation.</p></div></div><div className="demo-control"><div className="demo-control-icon"><Icon name="refresh"/></div><div><strong>Restore demo dataset</strong><span>The backend prevents deleting a shipment with linked payment records.</span></div><button className="btn btn-secondary btn-sm" onClick={() => void handleReset()} disabled={resetting}>{resetting ? 'Resetting…' : 'Reset demo'}</button></div></section></div>
+    <section className="panel account-verification-panel">
+      <div className="panel-header">
+        <div><span className="eyebrow">ACCOUNT SECURITY</span><h3>Phone verification</h3><p>Verify a mobile number for account recovery and SMS sign-in.</p></div>
+        {currentUser && <StatusBadge value={currentUser.phone_verified ? 'VERIFIED' : 'NOT VERIFIED'}/>}
+      </div>
+      {currentUser ? <>
+        <form className="account-phone-form" onSubmit={saveAccountPhone}>
+          <label>Mobile number (international format)<input type="tel" value={accountPhone} onChange={(event) => setAccountPhone(event.target.value)} placeholder="+919876543210" pattern="\+[1-9]\d{7,14}" required readOnly={Boolean(currentUser.phone_verified)}/></label>
+          {!currentUser.phone_verified && <button className="btn btn-secondary btn-sm" disabled={phoneSettingsBusy || !accountPhone.trim()}>{phoneSettingsBusy ? 'Saving…' : 'Save number'}</button>}
+        </form>
+        {currentUser.phone_number && !currentUser.phone_verified && <div className="phone-verification-actions">
+          {!accountPhoneOtpSent ? <button className="btn btn-primary btn-sm" onClick={() => void sendAccountPhoneOtp()} disabled={phoneSettingsBusy}>{phoneSettingsBusy ? 'Sending…' : 'Send SMS verification code'}</button> :
+            <form className="account-phone-otp-form" onSubmit={confirmAccountPhoneOtp}>
+              <div id="recaptcha-container" style={{display: 'none'}} />
+              <label>Six-digit verification code<input value={accountPhoneOtp} onChange={(event) => setAccountPhoneOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" required placeholder="123456"/></label>
+              <button className="btn btn-primary btn-sm" disabled={phoneSettingsBusy || accountPhoneOtp.length !== 6}>{phoneSettingsBusy ? 'Verifying…' : 'Verify phone'}</button>
+              <button type="button" className="text-button" onClick={() => void sendAccountPhoneOtp()} disabled={phoneSettingsBusy}>Resend code</button>
+            </form>}
+        </div>}
+        {currentUser.phone_verified && <p className="phone-verified-copy"><Icon name="check" size={15}/> Your mobile number is verified and cannot be changed from this screen.</p>}
+        <p className="account-phone-help">Use E.164 format, including the country code. Codes expire after 10 minutes and are limited to five attempts. Production uses Firebase Phone Auth.</p>
+        {phoneSettingsMessage && <div className="inline-alert phone-settings-message">{phoneSettingsMessage}</div>}
+      </> : <div className="empty-inline"><strong>Sign in to manage account verification</strong><button className="text-button" onClick={() => openAuth('login')}>Open sign in</button></div>}
+    </section>
+    <section className="panel settings-panel"><div className="panel-header"><div><span className="eyebrow">SERVICE HEALTH</span><h3>Connected services</h3><p>Configuration visibility only; secrets are never shown in the browser.</p></div></div><div className="settings-list"><SettingRow icon="activity" title="FastAPI backend" detail={apiBaseUrl} value={health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()) ? 'Connected' : 'Unavailable'} good={Boolean(health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()))}/><SettingRow icon="database" title="Database" detail="PostgreSQL connection reported by backend" value={health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()) ? 'Available' : 'Unknown'} good={Boolean(health && ['healthy', 'ok', 'available'].includes(health.status.toLowerCase()))}/><SettingRow icon="wallet" title="PayPal JavaScript SDK" detail="VITE_PAYPAL_CLIENT_ID" value={paypalClientId && !paypalClientId.toLowerCase().includes('replace') ? 'Client ID configured' : 'Not configured'} good={Boolean(paypalClientId && !paypalClientId.toLowerCase().includes('replace'))}/><SettingRow icon="spark" title="AI Copilot" detail="Provider and API key are configured on the backend" value="Backend-managed" good={null}/><SettingRow icon="truck" title="Live carrier integrations" detail={carrierCatalog?.note || 'Carrier adapter availability reported by backend.'} value={carrierCatalog?.live_integrations_available ? 'Available' : 'Not configured'} good={Boolean(carrierCatalog?.live_integrations_available)}/></div></section>
+    <div className="settings-grid"><section className="panel"><div className="panel-header"><div><span className="eyebrow">APPLICATION MODE</span><h3>Environment</h3></div><span className="environment-pill"><span className="environment-dot"/>{health?.service === 'FreightPilot AI Backend' ? 'Production Ready' : 'Unknown'}</span></div><div className="setting-description"><p>Current backend mode is reported by <code>/health</code>. The demo environment should use PayPal Sandbox and clearly mark synthetic carrier data.</p><div className="detail-line"><span>API base URL</span><strong>{apiBaseUrl}</strong></div><div className="detail-line"><span>Signed-in account</span><strong>{currentUser?.email || 'Guest / demo'}</strong></div><div className="detail-line"><span>Data scope</span><strong>{analytics?.data_scope || 'Unavailable'}</strong></div></div></section><section className="panel"><div className="panel-header"><div><span className="eyebrow">DEMO CONTROLS</span><h3>Seed data</h3><p>Reset synthetic demo content for a fresh presentation.</p></div></div><div className="demo-control"><div className="demo-control-icon"><Icon name="refresh"/></div><div><strong>Restore demo dataset</strong><span>The backend prevents deleting a shipment with linked payment records.</span></div><button className="btn btn-secondary btn-sm" onClick={() => void handleReset()} disabled={resetting}>{resetting ? 'Resetting…' : 'Reset demo'}</button></div></section></div>
     <section className="panel"><div className="panel-header"><div><span className="eyebrow">CARRIER REGISTRY</span><h3>Available adapters</h3><p>These are backend adapter registrations, not a list of confirmed live shipping providers.</p></div></div>{carrierCatalog?.items.length ? <div className="adapter-grid">{carrierCatalog.items.map((item) => <div className="adapter-card" key={item.code}><div className="adapter-mark">{item.name.slice(0, 1)}</div><div><strong>{item.name}</strong><span>{item.code}</span></div><StatusBadge value={item.status === 'CONFIGURED' ? 'REGISTERED' : 'NOT CONFIGURED'}/></div>)}</div> : <div className="empty-inline"><strong>No adapter registered</strong><span>Configure a carrier connector in backend/app/services/carrier_service.py.</span></div>}</section>
+    {currentUser && <>
+      <section className="panel danger-zone-panel">
+        <div className="panel-header">
+          <div><span className="eyebrow danger-zone-label">DANGER ZONE</span><h3>Delete your account</h3><p>This action is irreversible. Your account will be permanently deleted after 30 days. During this period you can contact support to restore it.</p></div>
+        </div>
+        {!deleteAccountOpen ? (
+          <button className="btn btn-danger" onClick={() => setDeleteAccountOpen(true)}>Delete account</button>
+        ) : (
+          <form className="danger-zone-form" onSubmit={async (e) => {
+            e.preventDefault();
+            if (deleteAccountConfirm !== 'DELETE') {
+              setDeleteAccountError('Please type DELETE to confirm.');
+              return;
+            }
+            setDeleteAccountBusy(true);
+            setDeleteAccountError('');
+            try {
+              await deleteAccount(deleteAccountPassword, deleteAccountConfirm);
+              setDeleteAccountBusy(false);
+              setAuthToken(null);
+              setCurrentUser(null);
+              setPage('landing');
+              showToast('Account deleted successfully. You can contact support within 30 days to restore it.');
+            } catch (err) {
+              setDeleteAccountError(err instanceof Error ? err.message : 'Failed to delete account. Please try again.');
+              setDeleteAccountBusy(false);
+            }
+          }}>
+            <div className="danger-zone-warning"><Icon name="warning" size={20}/><strong>Warning:</strong> This will permanently delete your account and all associated data.</div>
+            <label>Type <strong>DELETE</strong> to confirm<input value={deleteAccountConfirm} onChange={(event) => setDeleteAccountConfirm(event.target.value)} placeholder="DELETE" required autoComplete="off"/></label>
+            <label>Enter your password<input type="password" value={deleteAccountPassword} onChange={(event) => setDeleteAccountPassword(event.target.value)} required autoComplete="current-password" placeholder="Your current password"/></label>
+            {deleteAccountError && <div className="inline-alert inline-alert-danger">{deleteAccountError}</div>}
+            <div className="danger-zone-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => { setDeleteAccountOpen(false); setDeleteAccountConfirm(''); setDeleteAccountPassword(''); setDeleteAccountError(''); }}>Cancel</button>
+              <button type="submit" className="btn btn-danger" disabled={deleteAccountBusy}>{deleteAccountBusy ? 'Deleting…' : 'Delete my account permanently'}</button>
+            </div>
+          </form>
+        )}
+      </section>
+    </>}
   </>;
 
+  const renderCarriers = () => <>
+    <div className="stats-grid">
+      <StatCard label="Total Carriers" value={carrierPerformance.length || 0} caption="In quote database" icon="truck" tint="tint-coral"/>
+      <StatCard label="Quote Activity" value={carrierPerformance.reduce((s, c) => s + (c.quote_count || 0), 0)} caption="Stored carrier quotes" icon="quotes" tint="tint-cream"/>
+      <StatCard label="Configured Adapters" value={carrierCatalog?.items.filter(i => i.status === 'CONFIGURED').length || 0} caption="Live API connections" icon="activity" tint="tint-coral"/>
+      <StatCard label="Avg. Transit Time" value={(() => { const values = carrierPerformance.map((c) => c.average_transit_days).filter((value): value is number => value != null && Number.isFinite(value)); return values.length ? `${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} days` : '—'; })()} caption="For quotes with transit details" icon="clock" tint="tint-cream"/>
+    </div>
+    <section className="panel table-panel">
+      <div className="panel-header"><div><span className="eyebrow">CARRIER REGISTRY</span><h3>Carrier catalog <span className="subtle-count">{carrierCatalog?.items.length ?? 0}</span></h3><p>{carrierCatalog?.note || 'Backend-registered carrier adapters.'}</p></div></div>
+      {carrierCatalog?.items.length ? <div className="adapter-grid">{carrierCatalog.items.map((item) => <div className="adapter-card" key={item.code}><div className="adapter-mark">{item.name.slice(0, 1)}</div><div><strong>{item.name}</strong><span>{item.code}</span></div><StatusBadge value={item.status === 'CONFIGURED' ? 'REGISTERED' : 'NOT CONFIGURED'}/></div>)}</div> : <EmptyState title="No adapter registered" description="Configure a carrier connector in backend/app/services/carrier_service.py."/>}
+    </section>
+    <section className="panel table-panel">
+      <div className="panel-header"><div><span className="eyebrow">CARRIER PERFORMANCE</span><h3>Quote activity by carrier</h3><p>Grouped from stored quotes.</p></div></div>
+      <CarrierTable items={carrierPerformance}/>
+    </section>
+  </>;
+
+  const renderDocuments = () => <>
+    <section className="panel">
+      <div className="panel-header"><div><span className="eyebrow">DOCUMENT CENTER</span><h3>Shipment documents</h3><p>Bills of lading, customs declarations and freight paperwork are managed per shipment.</p></div></div>
+      <div className="empty-panel">
+        <div className="empty-symbol"><Icon name="file" size={28}/></div>
+        <h3>Document management</h3>
+        <p>Select a shipment from the Shipments page to view or attach its associated documents. Bills of lading, certificates of origin, and customs manifests are linked at the shipment level.</p>
+        <button className="btn btn-primary" onClick={() => setPage('shipments')}><Icon name="shipments" size={16}/> Go to Shipments</button>
+      </div>
+    </section>
+    {shipments.length > 0 && <section className="panel table-panel">
+      <div className="panel-header"><div><span className="eyebrow">SHIPMENT INDEX</span><h3>Shipments with documents</h3><p>{shipments.length} shipment records in the database.</p></div></div>
+      <div className="table-wrap"><table className="data-table"><thead><tr><th>Shipment</th><th>Route</th><th>Status</th><th>Documents</th></tr></thead><tbody>{shipments.slice(0, 8).map((s) => <tr key={s.id} className="clickable-row" onClick={() => { void selectShipment(s.id); setPage('shipments'); }}><td><strong>{s.cargo_type}</strong><span className="table-secondary mono">{s.id.slice(0, 10)}…</span></td><td>{s.origin} → {s.destination}</td><td><StatusBadge value={s.status}/></td><td><span className="count-pill">View</span></td></tr>)}</tbody></table></div>
+    </section>}
+  </>;
+
+  const renderNotFound = () => (
+    <section className="panel" style={{textAlign: 'center', padding: '60px 24px'}}>
+      <div className="empty-symbol" style={{margin: '0 auto 20px', width: 56, height: 56}}><Icon name="warning" size={32}/></div>
+      <span className="eyebrow">404 — ROUTE NOT FOUND</span>
+      <h2 style={{fontSize: '28px', marginTop: 8, marginBottom: 12}}>The requested page does not exist</h2>
+      <p style={{color: 'var(--text-secondary)', maxWidth: 480, margin: '0 auto 24px'}}>
+        The navigation link or URL anchor you followed is not recognized by the FreightPilot workspace router.
+      </p>
+      <button className="btn btn-primary" onClick={() => setPage('overview')}>
+        <Icon name="overview" size={16}/> Return to Dashboard
+      </button>
+    </section>
+  );
+
   const renderPage = () => {
-    if (loading && page === 'overview') return <LoadingPanel label="Connecting to FreightPilot services…"/>;
+    if (page === 'landing') return renderLanding();
     switch (page) {
       case 'overview': return renderOverview();
       case 'shipments': return renderShipments();
@@ -439,34 +1173,57 @@ export default function App(): React.ReactElement {
       case 'copilot': return renderCopilot();
       case 'payments': return renderPayments();
       case 'analytics': return renderAnalytics();
+      case 'carriers': return renderCarriers();
+      case 'documents': return renderDocuments();
       case 'settings': return renderSettings();
-      default: return renderOverview();
+      default: return renderNotFound();
     }
   };
 
-  return <div className="app-shell">
-    <aside className="sidebar"><div className="sidebar-brand"><div className="brand-mark">FP</div><div><strong>FreightPilot <span>AI</span></strong><small>FREIGHT PROCUREMENT</small></div></div><div className="workspace-switcher"><div className="workspace-avatar">N</div><div><strong>Northstar Logistics</strong><span>Workspace</span></div><Icon name="chevron" size={15}/></div><nav className="side-nav">{(['WORKSPACE', 'INTELLIGENCE', 'FINANCE', 'SYSTEM'] as const).map((group) => <div className="nav-group" key={group}><span className="nav-group-label">{group}</span>{NAV_ITEMS.filter((item) => item.group === group).map((item) => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => setPage(item.id)}><Icon name={item.icon} size={18}/><span>{item.label}</span>{item.id === 'payments' && payments.some((payment) => payment.status === 'REVIEW_REQUIRED') && <i className="nav-alert-dot"/>}</button>)}</div>)}</nav><div className="sidebar-bottom"><div className="sidebar-help"><div className="help-icon"><Icon name="shield" size={17}/></div><strong>Procurement control</strong><p>Use verified quotes and human review before committing payments.</p><button onClick={() => setPage('risk')}>Review risk signals <Icon name="arrow" size={13}/></button></div><div className="sidebar-footer"><span className="online-dot"/> API {health?.status === 'ok' ? 'connected' : 'not connected'}<span>v0.2.0</span></div></div></aside>
-    <div className="app-main">{topHeader}<main className="page-content"><div className="page-title-row"><div><div className="eyebrow">FREIGHTPILOT AI / WORKSPACE</div><h1>{currentPage.title}</h1><p>{currentPage.subtitle}</p></div>{page !== 'overview' && page !== 'settings' && <div className="page-context"><span className="context-label">ACTIVE SHIPMENT</span><select value={activeShipment?.id || ''} onChange={(event) => void selectShipment(event.target.value)} disabled={!shipments.length}>{shipments.length === 0 && <option value="">No shipments</option>}{shipments.map((shipment) => <option value={shipment.id} key={shipment.id}>{shipment.cargo_type} · {shipment.origin} → {shipment.destination}</option>)}</select></div>}</div>{pageError && <div className="error-banner"><Icon name="warning" size={17}/><span>{pageError}</span><button className="error-retry" onClick={() => void loadPortfolio(activeShipment?.id)}>Retry</button><button onClick={() => setPageError(null)} aria-label="Dismiss"><Icon name="close" size={15}/></button></div>}{renderPage()}<footer className="app-footer"><span>FreightPilot AI · PayPal AI Hackathon 2026</span><span>{health?.mode === 'production' ? 'Production environment' : 'Sandbox demo · Synthetic data is labeled'}</span></footer></main></div>
-    {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15}/></span>{toast}<button onClick={() => setToast(null)}><Icon name="close" size={14}/></button></div>}
-    <NewShipmentModal isOpen={newShipmentOpen} onClose={() => setNewShipmentOpen(false)} onSubmit={handleCreateShipment}/>
-    {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuthenticated={handleAuthSuccess}/>}
-  </div>;
+  if (page === 'landing') {
+    return (
+      <div className="public-website-shell">
+        {renderLanding()}
+        {authOpen && <AuthModal onClose={closeAuth} onAuthenticated={handleAuthSuccess} initialMode={authInitialMode} resetToken={resetPasswordToken}/>}
+        {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15}/></span>{toast}<button onClick={() => setToast(null)}><Icon name="close" size={14}/></button></div>}
+        <NewShipmentModal isOpen={newShipmentOpen} onClose={() => setNewShipmentOpen(false)} onSubmit={handleCreateShipment}/>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <FreightWorkspaceShell
+        page={page as WorkspacePage}
+        title={currentPage.title}
+        subtitle={currentPage.subtitle}
+        currentUser={currentUser}
+        notifications={notifications}
+        shipments={shipments}
+        activeShipmentId={activeShipment?.id}
+        backendOnline={Boolean(health && ['ok', 'healthy', 'available'].includes(health.status.toLowerCase()))}
+        error={pageError}
+        onNavigate={(nextPage) => setPage(nextPage)}
+        onSelectShipment={(id) => { void selectShipment(id); }}
+        onSignIn={() => openAuth('login')}
+        onSignOut={() => { setAuthToken(null); setCurrentUser(null); setPage('landing'); showToast('Signed out.'); void loadPortfolio(); }}
+        onPublicSite={() => setPage('landing')}
+        onNewShipment={() => setNewShipmentOpen(true)}
+        onSearchChange={setSearch}
+        onRetry={() => void loadPortfolio(activeShipment?.id)}
+        onDismissError={() => setPageError(null)}
+      >
+        {renderPage()}
+      </FreightWorkspaceShell>
+      {toast && <div className="toast"><span className="toast-check"><Icon name="check" size={15}/></span>{toast}<button onClick={() => setToast(null)}><Icon name="close" size={14}/></button></div>}
+      <NewShipmentModal isOpen={newShipmentOpen} onClose={() => setNewShipmentOpen(false)} onSubmit={handleCreateShipment}/>
+      {authOpen && <AuthModal onClose={closeAuth} onAuthenticated={handleAuthSuccess} initialMode={authInitialMode} resetToken={resetPasswordToken}/>}
+    </>
+  );
 }
 
 function Fact({ label, value }: { label: string; value: string }): React.ReactElement { return <div className="shipment-fact"><span>{label}</span><strong>{value}</strong></div>; }
 function LoadingPanel({ label }: { label: string }): React.ReactElement { return <div className="panel loading-panel"><span className="spinner"/><strong>{label}</strong></div>; }
-
-function StatusDistribution({ counts, total }: { counts: Record<string, number>; total: number }): React.ReactElement {
-  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const colors = ['#4169e1', '#17a889', '#9b83e6', '#e3a23d', '#d76d75', '#65a4cb'];
-  if (!rows.length) return <div className="empty-inline"><strong>No status records</strong><span>Shipment counts will appear after records are created.</span></div>;
-  return <div className="status-distribution"><div className="distribution-bar">{rows.map(([status, count], index) => <span key={status} style={{ width: `${total ? count / total * 100 : 0}%`, background: colors[index % colors.length] }} title={`${status}: ${count}`}/>)}</div>{rows.map(([status, count], index) => <div className="distribution-row" key={status}><span className="distribution-label"><i style={{ background: colors[index % colors.length] }}/>{status.replace(/_/g, ' ')}</span><strong>{count}</strong><span>{total ? Math.round(count / total * 100) : 0}%</span></div>)}</div>;
-}
-
-function CarrierPreview({ items }: { items: CarrierPerformance[] }): React.ReactElement {
-  if (!items.length) return <div className="empty-inline"><strong>No carrier quote history</strong><span>Carrier metrics appear after quote records are stored.</span></div>;
-  return <div className="carrier-preview">{items.map((item) => <div className="carrier-preview-row" key={`${item.carrier}-${item.currency}`}><div className="carrier-avatar">{item.carrier.slice(0, 1).toUpperCase()}</div><div className="carrier-preview-copy"><strong>{item.carrier}</strong><span>{item.quote_count} stored quote{item.quote_count === 1 ? '' : 's'}</span></div><div className="carrier-preview-value"><strong>{money(item.average_quote, item.currency)}</strong><span>avg. {item.currency}</span></div></div>)}</div>;
-}
 
 function CarrierTable({ items }: { items: CarrierPerformance[] }): React.ReactElement {
   if (!items.length) return <EmptyState title="No carrier data available" description="Carrier performance is calculated from quote history. The backend currently has no live carrier connector configured."/>;

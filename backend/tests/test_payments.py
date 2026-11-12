@@ -7,8 +7,17 @@ from app.db.models import Base, Payment
 from app.db.seed import seed_demo_data
 from app.db.session import SessionLocal, engine
 from app.main import app
+from uuid import uuid4
 
 client = TestClient(app)
+
+def _buyer_headers():
+    response = client.post("/api/auth/register", json={
+        "email": f"payment-{uuid4().hex[:12]}@example.test",
+        "password": "Payment-Test-Password-123!",
+    })
+    assert response.status_code == 201, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 def setup_module():
@@ -22,11 +31,12 @@ def setup_module():
 
 def test_create_order_success():
     """Verify order creation with mocked PayPal success response."""
+    headers = _buyer_headers()
     with patch("app.routes.payments.create_paypal_order") as mock_create:
         mock_create.return_value = {"id": "PAYPAL_12345", "status": "CREATED"}
         response = client.post(
-            "/api/payments/create-order",
-            json={"quote_id": "quote-demo-001", "idempotency_key": "test-key-1"},
+            "/api/payments/create-order", headers=headers,
+            json={"quote_id": "quote-demo-001", "idempotency_key": "test-key-1-unique"},
         )
         if response.status_code != 201:
             print(f"DEBUG: Create order failed with {response.status_code}: {response.json()}")
@@ -40,11 +50,12 @@ def test_create_order_success():
 def test_capture_order_success():
     """Verify capture success with mocked PayPal response."""
     # 1. Create Order
+    headers = _buyer_headers()
     with patch("app.routes.payments.create_paypal_order") as mock_create:
         mock_create.return_value = {"id": "PAYPAL_67890", "status": "CREATED"}
         create_res = client.post(
-            "/api/payments/create-order",
-            json={"quote_id": "quote-demo-002", "idempotency_key": "test-key-2"},
+            "/api/payments/create-order", headers=headers,
+            json={"quote_id": "quote-demo-002", "idempotency_key": "test-key-2-unique"},
         )
         payment_id = create_res.json()["payment_id"]
 
@@ -56,10 +67,10 @@ def test_capture_order_success():
             "purchase_units": [{"amount": {"value": "42000.00", "currency_code": "USD"}}],
         }
         mock_capture.return_value = {
-            "purchase_units": [{"payments": {"captures": [{"id": "CAPT_123", "status": "COMPLETED"}]}}]
+            "purchase_units": [{"payments": {"captures": [{"id": "CAPT_123", "status": "COMPLETED", "amount": {"value": "42000.00", "currency_code": "USD"}}]}}]
         }
 
-        capture_res = client.post(f"/api/payments/{payment_id}/capture", json={})
+        capture_res = client.post(f"/api/payments/{payment_id}/capture", headers=headers, json={})
         if capture_res.status_code != 200:
             print(f"DEBUG: Capture order failed with {capture_res.status_code}: {capture_res.json()}")
         assert capture_res.status_code == 200

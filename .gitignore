@@ -30,6 +30,9 @@ wheels/
 htmlcov/
 .mypy_cache/
 
+# Allow frontend/src/lib (not a Python venv)
+!frontend/src/lib/
+
 # Virtual Environments
 .venv/
 venv/
@@ -63,3 +66,12 @@ dist-ssr/
 .DS_Store
 Thumbs.db
 .vite
+
+uploads/
+.claude/
+*.log
+*.db-shm
+*.db-wal
+*.db-journal
+
+*.zip

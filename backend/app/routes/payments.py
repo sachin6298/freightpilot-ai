@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.access import get_accessible_shipment
 from app.core.audit import create_notification, write_audit
-from app.core.security import get_optional_current_user
-from app.db.models import Payment, Quote, Shipment, User, WebhookEvent
+from app.core.security import get_optional_current_user, get_current_user, require_buyer
+from app.db.models import Payment, Quote, Shipment, User, WebhookEvent, SellerProfile
 from app.db.session import get_db
 from app.services.paypal_service import (
     PayPalServiceError, capture_paypal_order, create_paypal_order,
@@ -74,7 +74,8 @@ def _payment_for_user(db: Session, payment_id: str, user: User | None) -> Paymen
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     if payment is None:
         raise HTTPException(status_code=404, detail={"code": "PAYMENT_NOT_FOUND", "message": "Payment not found."})
-    get_accessible_shipment(db, payment.shipment_id, user)
+    if user is None or user.role != "ADMIN":
+        get_accessible_shipment(db, payment.shipment_id, user)
     return payment
 
 
@@ -118,6 +119,38 @@ def _extract_capture(result: dict[str, Any]) -> tuple[str | None, str | None, De
     return capture.get("id"), capture.get("status"), capture_amount, amount.get("currency_code")
 
 
+def _ensure_settlement(db: Session, payment: Payment, actor_id: str | None = None) -> bool:
+    """Create a seller settlement only for the seller explicitly attached to the paid quote."""
+    from app.db.models import Settlement
+    quote = db.query(Quote).filter(Quote.id == payment.quote_id).first()
+    if quote is None or not quote.seller_id:
+        write_audit(db, entity_type="PAYMENT", entity_id=payment.id, action="SETTLEMENT_HELD_NO_SELLER",
+                    user_id=actor_id, details={"reason": "quote has no explicitly assigned seller"})
+        return False
+    seller = db.query(User).filter(User.id == quote.seller_id, User.role == "SELLER", User.is_active.is_(True)).first()
+    profile = db.query(SellerProfile).filter(SellerProfile.user_id == quote.seller_id).first()
+    if seller is None or profile is None or profile.verification_status != "VERIFIED":
+        write_audit(db, entity_type="PAYMENT", entity_id=payment.id, action="SETTLEMENT_HELD_SELLER_NOT_VERIFIED",
+                    user_id=actor_id, details={"seller_id": quote.seller_id})
+        return False
+    existing = db.query(Settlement).filter(Settlement.payment_id == payment.id).first()
+    if existing:
+        return True
+    payment_amt = Decimal(str(payment.amount_snapshot)).quantize(Decimal("0.01"))
+    platform_fee = (payment_amt * Decimal("0.05")).quantize(Decimal("0.01"))
+    applicable_tax = (platform_fee * Decimal("0.10")).quantize(Decimal("0.01"))
+    seller_payable = payment_amt - platform_fee - applicable_tax
+    db.add(Settlement(
+        payment_id=payment.id, seller_id=seller.id,
+        buyer_payment_amount=payment_amt, platform_fee=platform_fee,
+        applicable_taxes=applicable_tax, seller_payable_amount=seller_payable,
+        currency=payment.currency_snapshot, status="PENDING_DISBURSEMENT",
+    ))
+    write_audit(db, entity_type="PAYMENT", entity_id=payment.id, action="SETTLEMENT_CREATED",
+                user_id=actor_id, details={"seller_id": seller.id, "amount": str(seller_payable)})
+    return True
+
+
 def _mark_paid(db: Session, payment: Payment) -> None:
     shipment = db.query(Shipment).filter(Shipment.id == payment.shipment_id).first()
     if shipment and shipment.status in {"PAYMENT_PENDING", "QUOTED", "BOOKED"}:
@@ -133,12 +166,23 @@ def _mark_paid(db: Session, payment: Payment) -> None:
 def create_order(
     payload: CreateOrderRequest,
     db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_current_user),
+    user: User = Depends(require_buyer),
 ):
     quote = db.query(Quote).filter(Quote.id == payload.quote_id).first()
     if quote is None:
         raise HTTPException(status_code=404, detail={"code": "QUOTE_NOT_FOUND", "message": "Selected quote was not found."})
+    if settings.is_production and (not payload.idempotency_key or len(payload.idempotency_key) < 16):
+        raise HTTPException(status_code=422, detail={"code": "IDEMPOTENCY_KEY_REQUIRED", "message": "A unique idempotency key of at least 16 characters is required for payment creation."})
+    if settings.is_production and (not user.email_verified or not user.phone_verified):
+        raise HTTPException(status_code=403, detail={"code": "BUYER_VERIFICATION_REQUIRED", "message": "Verify your email and phone before making payments."})
     shipment = get_accessible_shipment(db, quote.shipment_id, user)
+    if settings.is_production:
+        if not quote.seller_id:
+            raise HTTPException(status_code=409, detail={"code": "QUOTE_SELLER_MISSING", "message": "This quote has no verified seller beneficiary and cannot be paid."})
+        seller_profile = db.query(SellerProfile).filter(SellerProfile.user_id == quote.seller_id).first()
+        seller_user = db.query(User).filter(User.id == quote.seller_id, User.is_active.is_(True)).first()
+        if not seller_user or seller_user.role != "SELLER" or not seller_profile or seller_profile.verification_status != "VERIFIED":
+            raise HTTPException(status_code=409, detail={"code": "SELLER_NOT_VERIFIED", "message": "Seller verification must be approved before payment."})
 
     if quote.validity_until:
         valid_until = quote.validity_until
@@ -225,7 +269,7 @@ def create_order(
 @router.post("/payments/{payment_id}/capture", response_model=PaymentResponse)
 def capture_order(
     payment_id: str, payload: CaptureOrderRequest,
-    db: Session = Depends(get_db), user: User | None = Depends(get_optional_current_user),
+    db: Session = Depends(get_db), user: User = Depends(require_buyer),
 ):
     payment = _payment_for_user(db, payment_id, user)
     if payment.status == "CAPTURED":
@@ -249,7 +293,7 @@ def capture_order(
                 payment.status = "REVIEW_REQUIRED"
                 db.commit()
                 raise HTTPException(status_code=502, detail={"code": "CAPTURE_NOT_VERIFIED", "message": "PayPal order is completed but capture details could not be verified."})
-            if capture_amount is not None and (capture_amount != Decimal(str(payment.amount_snapshot)) or capture_currency != payment.currency_snapshot):
+            if capture_amount is None or capture_amount != Decimal(str(payment.amount_snapshot)) or capture_currency != payment.currency_snapshot:
                 payment.status = "REVIEW_REQUIRED"
                 db.commit()
                 raise HTTPException(status_code=409, detail={"code": "CAPTURE_AMOUNT_MISMATCH", "message": "Captured amount differs from the stored quote."})
@@ -263,7 +307,7 @@ def capture_order(
                 payment.status = "REVIEW_REQUIRED"
                 db.commit()
                 raise HTTPException(status_code=502, detail={"code": "CAPTURE_NOT_COMPLETED", "message": "PayPal did not confirm a completed capture."})
-            if capture_amount is not None and (capture_amount != Decimal(str(payment.amount_snapshot)) or capture_currency != payment.currency_snapshot):
+            if capture_amount is None or capture_amount != Decimal(str(payment.amount_snapshot)) or capture_currency != payment.currency_snapshot:
                 payment.status = "REVIEW_REQUIRED"
                 db.commit()
                 raise HTTPException(status_code=409, detail={"code": "CAPTURE_AMOUNT_MISMATCH", "message": "Captured amount differs from the stored quote."})
@@ -282,33 +326,11 @@ def capture_order(
     payment.last_verified_at = datetime.now(timezone.utc)
     _mark_paid(db, payment)
 
-    # Create structured settlement record for seller
-    quote = db.query(Quote).filter(Quote.id == payment.quote_id).first()
-    seller_user_id = quote.seller_id if quote and quote.seller_id else None
-    if not seller_user_id:
-        seller = db.query(User).filter(User.role == "SELLER").first()
-        seller_user_id = seller.id if seller else (user.id if user else None)
-
-    if seller_user_id:
-        from app.db.models import Settlement
-        existing_settlement = db.query(Settlement).filter(Settlement.payment_id == payment.id).first()
-        if not existing_settlement:
-            payment_amt = Decimal(str(payment.amount_snapshot))
-            platform_fee = (payment_amt * Decimal("0.05")).quantize(Decimal("0.01"))
-            applicable_tax = (platform_fee * Decimal("0.10")).quantize(Decimal("0.01"))
-            seller_payable = payment_amt - platform_fee - applicable_tax
-
-            settlement = Settlement(
-                payment_id=payment.id,
-                seller_id=seller_user_id,
-                buyer_payment_amount=payment_amt,
-                platform_fee=platform_fee,
-                applicable_taxes=applicable_tax,
-                seller_payable_amount=seller_payable,
-                currency=payment.currency_snapshot,
-                status="PENDING_DISBURSEMENT"
-            )
-            db.add(settlement)
+    # Never infer a settlement beneficiary from database order. The quote must
+    # identify an explicitly assigned, verified seller.
+    settlement_created = _ensure_settlement(db, payment, actor_id=user.id if user else None)
+    if not settlement_created and settings.is_production:
+        payment.status = "REVIEW_REQUIRED"
 
     write_audit(db, entity_type="PAYMENT", entity_id=payment.id, action="PAYMENT_CAPTURED",
                 user_id=user.id if user else None,
@@ -320,14 +342,17 @@ def capture_order(
 
 @router.get("/settlements")
 def list_settlements(
-    user: User | None = Depends(get_optional_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """View settlement ledger entries. Sellers view their own settlements, admins view all."""
+    """Sellers can view only their ledger; administrators can view the full ledger."""
     from app.db.models import Settlement
-    query = db.query(Settlement)
-    if user and user.role == "SELLER":
-        query = query.filter(Settlement.seller_id == user.id)
+    if user.role == "SELLER":
+        query = db.query(Settlement).filter(Settlement.seller_id == user.id)
+    elif user.role == "ADMIN":
+        query = db.query(Settlement)
+    else:
+        raise HTTPException(status_code=403, detail={"code": "SETTLEMENT_ACCESS_DENIED", "message": "Only sellers and administrators can access settlements."})
 
     settlements = query.order_by(Settlement.created_at.desc()).limit(100).all()
     return [
@@ -351,13 +376,19 @@ def list_settlements(
 @router.post("/payments/{payment_id}/refund", response_model=PaymentResponse)
 def refund_payment(
     payment_id: str, db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_current_user),
+    user: User = Depends(get_current_user),
 ):
+    if user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail={"code": "REFUND_APPROVAL_REQUIRED", "message": "Refund execution is restricted to administrators until a formal refund-request and approval workflow is enabled."})
     payment = _payment_for_user(db, payment_id, user)
     if payment.status == "REFUNDED":
         return _format_payment_response(payment)
     if payment.status != "CAPTURED" or not payment.provider_capture_id:
         raise HTTPException(status_code=409, detail={"code": "PAYMENT_NOT_REFUNDABLE", "message": "Only captured payments can be refunded."})
+    from app.db.models import Settlement
+    settlement = db.query(Settlement).filter(Settlement.payment_id == payment.id).first()
+    if settlement and settlement.status == "PAID_OUT":
+        raise HTTPException(status_code=409, detail={"code": "SETTLEMENT_ALREADY_PAID_OUT", "message": "This payment has already been paid out to the seller. Reconcile the payout before initiating a refund."})
     try:
         refund = refund_paypal_capture(payment.provider_capture_id, request_id=f"refund-{payment.id}")
     except PayPalServiceError as exc:
@@ -367,6 +398,11 @@ def refund_payment(
         db.commit()
         raise HTTPException(status_code=502, detail={"code": "REFUND_NOT_CONFIRMED", "message": "PayPal did not confirm the refund."})
     payment.provider_refund_id = refund["id"]
+    if settlement and settlement.status != "PAID_OUT":
+        settlement.status = "REVERSED"
+        settlement.reconciliation_notes = "Reversed following confirmed full PayPal refund."
+    elif settlement and settlement.status == "PAID_OUT":
+        settlement.reconciliation_notes = "Refund confirmed after payout; manual recovery/reconciliation required."
     payment.status = "REFUNDED"
     payment.last_verified_at = datetime.now(timezone.utc)
     write_audit(db, entity_type="PAYMENT", entity_id=payment.id, action="PAYMENT_REFUNDED",
@@ -379,7 +415,7 @@ def refund_payment(
 @router.get("/payments/{payment_id}", response_model=PaymentResponse)
 def get_payment(
     payment_id: str, db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_current_user),
+    user: User = Depends(get_current_user),
 ):
     return _format_payment_response(_payment_for_user(db, payment_id, user))
 
@@ -387,9 +423,10 @@ def get_payment(
 @router.get("/shipments/{shipment_id}/payments", response_model=list[PaymentResponse])
 def list_shipment_payments(
     shipment_id: str, limit: int = 100, offset: int = 0,
-    db: Session = Depends(get_db), user: User | None = Depends(get_optional_current_user),
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
-    get_accessible_shipment(db, shipment_id, user)
+    if user.role != "ADMIN":
+        get_accessible_shipment(db, shipment_id, user)
     payments = (
         db.query(Payment).filter(Payment.shipment_id == shipment_id)
         .order_by(Payment.created_at.desc()).offset(max(0, offset)).limit(max(1, min(limit, 500))).all()
@@ -438,9 +475,14 @@ async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
     resource = event.get("resource") or {}
     related_ids = (resource.get("supplementary_data") or {}).get("related_ids") or {}
     order_id = related_ids.get("order_id")
+    capture_lookup_id = resource.get("id") if str(event_type).startswith("PAYMENT.CAPTURE.") else None
     payment = db.query(Payment).filter(Payment.provider_order_id == order_id).first() if order_id else None
+    if payment is None and capture_lookup_id:
+        payment = db.query(Payment).filter(Payment.provider_capture_id == capture_lookup_id).first()
 
-    if payment and event_type == "PAYMENT.CAPTURE.COMPLETED":
+    if payment and payment.status == "REFUNDED":
+        webhook_record.processing_status = "IGNORED_OUT_OF_ORDER"
+    elif payment and event_type == "PAYMENT.CAPTURE.COMPLETED":
         amount = resource.get("amount") or {}
         try:
             webhook_amount = Decimal(str(amount.get("value"))).quantize(Decimal("0.01"))
@@ -453,6 +495,8 @@ async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
             payment.provider_capture_id = capture_id
             payment.last_verified_at = datetime.now(timezone.utc)
             _mark_paid(db, payment)
+            if not _ensure_settlement(db, payment) and settings.is_production:
+                payment.status = "REVIEW_REQUIRED"
         else:
             payment.status = "REVIEW_REQUIRED"
     elif payment and event_type == "PAYMENT.CAPTURE.DENIED":
@@ -462,6 +506,13 @@ async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
         if related_capture_id == payment.provider_capture_id and resource.get("id"):
             payment.status = "REFUNDED"
             payment.provider_refund_id = resource.get("id")
+            from app.db.models import Settlement
+            settlement = db.query(Settlement).filter(Settlement.payment_id == payment.id).first()
+            if settlement and settlement.status != "PAID_OUT":
+                settlement.status = "REVERSED"
+                settlement.reconciliation_notes = "Reversed following provider refund webhook."
+            elif settlement and settlement.status == "PAID_OUT":
+                settlement.reconciliation_notes = "Provider refund received after payout; manual recovery/reconciliation required."
 
     webhook_record.processing_status = "PROCESSED"
     webhook_record.processed_at = datetime.now(timezone.utc)

@@ -18,6 +18,10 @@ class CarrierAdapter(Protocol):
         """Return normalized provider offers; each offer must identify its source."""
         ...
 
+    def fetch_tracking(self, tracking_number: str) -> dict[str, Any]:
+        """Return normalized and provider-authenticated tracking data."""
+        ...
+
 
 class CarrierRegistry:
     def __init__(self) -> None:

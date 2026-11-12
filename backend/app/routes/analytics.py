@@ -5,7 +5,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.security import get_optional_current_user
+from app.core.security import get_optional_current_user, require_seller, require_admin
 from app.db.models import Payment, Quote, RiskAssessment, Shipment, User
 from app.db.session import get_db
 
@@ -97,10 +97,10 @@ def carrier_performance(db: Session = Depends(get_db), user: User | None = Depen
 @router.get("/seller")
 def seller_analytics(
     db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_current_user)
+    user: User = Depends(require_seller)
 ):
     """Phase 14: Seller-specific operational & financial analytics."""
-    seller_filter = Quote.seller_id == user.id if user and user.role == "SELLER" else True
+    seller_filter = Quote.seller_id == user.id
     quotes = db.query(Quote).filter(seller_filter).all()
 
     total_quotes = len(quotes)
@@ -108,7 +108,7 @@ def seller_analytics(
 
     from app.db.models import Settlement
     settlement_query = db.query(Settlement.currency, func.sum(Settlement.seller_payable_amount)).filter(
-        Settlement.seller_id == user.id if user and user.role == "SELLER" else True
+        Settlement.seller_id == user.id
     ).group_by(Settlement.currency).all()
 
     return {
@@ -125,7 +125,7 @@ def seller_analytics(
 @router.get("/admin")
 def admin_analytics(
     db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_current_user)
+    user: User = Depends(require_admin)
 ):
     """Phase 14: Marketplace-wide Admin metrics."""
     total_users = db.query(func.count(User.id)).scalar() or 0

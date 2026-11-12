@@ -30,22 +30,25 @@ def upgrade() -> None:
 
     # Update existing users: convert 'USER' role to 'BUYER'
     op.execute("UPDATE users SET role_new = 'BUYER' WHERE role = 'USER'")
-    op.execute("UPDATE users SET role_new = role WHERE role IN ('BUYER', 'SELLER', 'ADMIN')")
+    op.execute("UPDATE users SET role_new = role::text::userrole WHERE role IN ('BUYER', 'SELLER', 'ADMIN')")
 
-    # Drop old role column and rename new column
+    # Drop the index before the old column so the migration works on both
+    # PostgreSQL and SQLite-backed test/development databases.
+    op.drop_index('ix_users_role', table_name='users')
+
+    # Drop old role column and rename new column.
     op.drop_column('users', 'role')
     op.alter_column('users', 'role_new', new_column_name='role')
 
-    # Drop old index and create new one with proper name
-    op.drop_index('ix_users_role', table_name='users')
+    # Recreate the index against the new role column.
     op.create_index(op.f('ix_users_role'), 'users', ['role'], unique=False)
 
-    # Add check constraint for role values
-    op.create_check_constraint(
-        'ck_users_role_valid',
-        'users',
-        "role IN ('BUYER', 'SELLER', 'ADMIN')"
-    )
+    # Batch mode is portable to SQLite (used by tests) and PostgreSQL.
+    with op.batch_alter_table('users') as batch_op:
+        batch_op.create_check_constraint(
+            'ck_users_role_valid',
+            "role IN ('BUYER', 'SELLER', 'ADMIN')"
+        )
 
     # Create separate tables for buyer and seller profiles
     op.create_table('buyer_profiles',
@@ -173,7 +176,8 @@ def downgrade() -> None:
     op.drop_column('users', 'phone_number')
     op.drop_column('users', 'phone_verified')
     op.drop_column('users', 'email_verified')
-    op.drop_constraint('ck_users_role_valid', 'users', type_='check')
+    with op.batch_alter_table('users') as batch_op:
+        batch_op.drop_constraint('ck_users_role_valid', type_='check')
     op.drop_index(op.f('ix_phone_verifications_user_id'), table_name='phone_verifications')
     op.drop_table('phone_verifications')
     op.drop_index(op.f('ix_email_verifications_user_id'), table_name='email_verifications')

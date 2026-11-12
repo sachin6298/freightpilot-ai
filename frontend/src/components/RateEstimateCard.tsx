@@ -25,7 +25,7 @@ export const RateEstimateCard: React.FC<RateEstimateCardProps> = ({ estimate, sh
       <div className="estimate-header">
         <div>
           <div className="estimate-title-row">
-            <h3 className="card-title">Freight Rate Baseline &amp; Market Context</h3>
+            <h3 className="card-title">Freight Rate Baseline & Market Context</h3>
             <span className={`badge ${isInsufficient ? 'badge-warning' : 'badge-coverage'}`}>
               {isInsufficient ? 'LIMITED DATA' : 'DEMO STATISTICAL BASELINE'}
             </span>
@@ -63,7 +63,7 @@ export const RateEstimateCard: React.FC<RateEstimateCardProps> = ({ estimate, sh
 
         {/* Methodology & Strict Non-ML Disclaimer */}
         <div className="estimate-disclaimer-box">
-          <div className="disclaimer-title">Methodology &amp; Transparency Notice</div>
+          <div className="disclaimer-title">Methodology & Transparency Notice</div>
           <p className="disclaimer-text">
             <strong>Method:</strong> {estimate.method}.
           </p>

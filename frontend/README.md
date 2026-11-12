@@ -1,45 +1,39 @@
-# FreightPilot AI Frontend
+# Freight operations frontend
 
-React 18 + TypeScript + Vite UI for the FreightPilot AI FastAPI backend.
+React + TypeScript + Vite frontend for the existing FastAPI logistics platform.
 
-## Setup (Windows PowerShell)
+## Local development
 
 ```powershell
-cd frontend
-Copy-Item .env.example .env.local
 npm ci
-npm run build
 npm run dev
 ```
 
-Open <http://localhost:5173>.
+The development server normally starts at `http://localhost:5173`. If that port is occupied, use the URL printed by Vite.
 
-## Environment variables
+## Production build
 
-```env
-VITE_API_BASE_URL=http://localhost:8000
-VITE_PAYPAL_CLIENT_ID=YOUR_SANDBOX_CLIENT_ID
+```powershell
+npm run build
 ```
 
-The PayPal Client ID is public. The PayPal Client Secret belongs only in `backend/.env` and must never be exposed through a `VITE_` variable.
+## Environment
 
-## Pages and backend connections
+Copy `.env.example` to `.env.local` and set the values required by your deployment:
 
-| Page | Data / actions |
-|---|---|
-| Overview | `/api/analytics/overview`, `/api/analytics/carriers`, `/api/shipments` |
-| Shipments | Create, list, cancel and manual tracking events |
-| Freight quotes | Shipment quotes, benchmark estimate and quote assessment |
-| Risk manager | Re-assess selected shipment quote records |
-| AI Copilot | `/api/copilot/compare` with selected stored quote IDs |
-| Payments | Shipment payment history and PayPal SDK create/approve/capture flow |
-| Analytics | Shipment status, captured spend by currency and carrier aggregation |
-| Settings | `/health`, carrier registry and client-side config presence |
+- `VITE_API_BASE_URL`: FastAPI base URL (defaults to `http://localhost:8000`).
+- `VITE_PAYPAL_CLIENT_ID`: PayPal Sandbox client ID for the browser SDK.
+- `VITE_GOOGLE_CLIENT_ID`: Google OAuth Web client ID.
+- `VITE_APPLE_CLIENT_ID` and `VITE_APPLE_REDIRECT_URI`: Apple Sign In configuration.
+- `VITE_SUPPORT_EMAIL`: support mailbox used by the public Contact section.
 
-## Notes
+Never put private OAuth secrets, PayPal secrets, Gemini API keys, Twilio credentials, or database credentials in frontend environment variables. Configure those on the backend.
 
-- The app supports Guest demo access while backend `AUTH_REQUIRED=false`; login and registration are also available.
-- PayPal checkout requires the PayPal Sandbox Client ID in the frontend and the Sandbox Client ID/Secret in backend configuration.
-- The frontend creates a PayPal order through FastAPI, returns the provider order ID to the PayPal JavaScript SDK, then asks FastAPI to verify/capture the approved order. It never decides the amount.
-- Payment history is aggregated by requesting the payment list for each visible shipment; the backend currently has no global payments endpoint.
-- Live carrier adapters are not supplied by default. Quote and tracking data are labeled by provenance and manual/demo records should not be presented as live.
+## Main screens
+
+- Public landing page with maritime hero, capabilities, workflow, vessel visual and contact section.
+- Login and buyer/seller registration backed by the existing authentication API.
+- Tallie-inspired workspace shell with Overview, Shipments, Freight quotes, Payments, AI Copilot, Risk, Analytics, Carriers, Documents and Settings.
+- Persistent light/dark theme preference.
+
+Dashboard metrics and records are populated from the backend API. No sample Tallie transactions or fabricated logistics KPIs are included.

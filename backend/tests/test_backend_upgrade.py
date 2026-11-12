@@ -91,8 +91,9 @@ def test_analytics_returns_db_aggregates():
 
 
 def test_expired_quote_cannot_create_payment_order():
-    response = client.post("/api/payments/create-order", json={
-        "quote_id": "quote-demo-003", "idempotency_key": f"expired-{uuid4().hex[:12]}",
+    token = _register()
+    response = client.post("/api/payments/create-order", headers={"Authorization": f"Bearer {token}"}, json={
+        "quote_id": "quote-demo-003", "idempotency_key": f"expired-{uuid4().hex[:20]}",
     })
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "QUOTE_EXPIRED"

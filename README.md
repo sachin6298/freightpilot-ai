@@ -14,7 +14,10 @@ The application is a React + TypeScript + Vite frontend backed by a FastAPI modu
 - Payment history read from the shipment payment endpoints.
 - PayPal JavaScript SDK Sandbox checkout calling backend order-creation and capture-verification routes.
 - Analytics grouped by shipment status, carrier and currency. Monetary values are never combined across currencies.
-- Optional account registration/login and bearer-token handling. The local demo can run as Guest while `AUTH_REQUIRED=false`.
+- Email/password buyer and seller registration and login.
+- Google sign-in using server-verified Google ID tokens; Apple Sign in with Apple using server-side authorization-code exchange and ID-token verification.
+- SMS one-time-code sign-in for existing accounts with a unique registered phone number, plus an account-settings flow to add and verify a phone number.
+- Bearer-token session handling; the local demo can still run as Guest while `AUTH_REQUIRED=false`.
 - Settings and service configuration visibility without exposing secrets.
 
 ## Repository layout
@@ -50,6 +53,7 @@ FreightPilot_AI/
 - Python 3.11 or newer
 - Node.js 20 or newer and npm
 - PayPal Developer Sandbox app credentials for checkout
+- Optional Google OAuth client ID, Apple Developer Services ID/key, and Twilio SMS credentials for external sign-in providers
 - Optional AI provider credentials for externally hosted AI analysis
 
 ## Run locally on Windows PowerShell
@@ -62,10 +66,9 @@ py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-Copy-Item .env.example .env
 ```
 
-Edit `backend/.env`. For a local demo, keep `DEMO_MODE=true`, `PAYPAL_ENV=sandbox`, and `AUTH_REQUIRED=false`. Set a unique `JWT_SECRET_KEY`. Add PayPal Sandbox credentials and an AI provider key only when those integrations are to be exercised.
+The archive includes a placeholder `backend/.env`; edit it rather than copying the example over it. Keep `DEMO_MODE=true`, `PAYPAL_ENV=sandbox`, and `AUTH_REQUIRED=false` for a local demo. Set a unique `JWT_SECRET_KEY`. The Google client ID belongs in this file. Apple also needs its Team ID, Key ID, `.p8` private key and exact HTTPS Return URL. PayPal, email, SMS and AI credentials remain server-side.
 
 Initialize or upgrade the local database:
 
@@ -92,18 +95,20 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ```powershell
 cd frontend
-Copy-Item .env.example .env.local
 npm ci
 ```
 
-Edit `frontend/.env.local`:
+The archive includes a browser-safe placeholder `frontend/.env.local`. Edit it:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000
-VITE_PAYPAL_CLIENT_ID=YOUR_SANDBOX_CLIENT_ID
+VITE_PAYPAL_CLIENT_ID=
+VITE_GOOGLE_CLIENT_ID=
+VITE_APPLE_CLIENT_ID=
+VITE_APPLE_REDIRECT_URI=
 ```
 
-`VITE_PAYPAL_CLIENT_ID` is a public client identifier. Never put the PayPal Client Secret in a Vite variable or any frontend file.
+Only public client identifiers belong in Vite variables. Never put a Google client secret, Apple `.p8` private key, PayPal Secret, Twilio key or any backend secret in the frontend. Apple requires a registered HTTPS Return URL; localhost is not accepted for Apple web sign-in.
 
 Build and run:
 
@@ -139,3 +144,11 @@ Webhook verification requires a publicly reachable HTTPS callback (or a secure d
 ## API areas used by the frontend
 
 `/health`, `/api/auth/*`, `/api/shipments`, `/api/shipments/{id}/quotes`, `/api/shipments/{id}/estimate`, `/api/shipments/{id}/tracking`, `/api/quotes/{id}/assess`, `/api/copilot/compare`, `/api/payments/*`, `/api/shipments/{id}/payments`, `/api/analytics/*`, `/api/carriers`, `/api/notifications` and `/api/demo/reset`.
+
+
+## Hardened deployment package
+
+The current release includes production-mode safeguards, security-focused backend changes, private S3-compatible document storage, Render Blueprint configuration, Vercel SPA configuration and GitHub CI. Read **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** before deploying, and **[docs/SECURITY.md](docs/SECURITY.md)** for implemented controls and remaining security work. The deployment is not fully operational until you add provider credentials, configure ClamAV, create the initial administrator, and complete the frontend verification experience.
+
+
+Provider credential setup and exact environment-variable mapping: [docs/PROVIDER_CREDENTIALS.md](docs/PROVIDER_CREDENTIALS.md).

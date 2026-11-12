@@ -178,6 +178,7 @@ export interface UserProfile {
   is_active: boolean;
   email_verified?: boolean;
   phone_verified?: boolean;
+  phone_number?: string | null;
 }
 
 export interface QuotePriceRevisionItem {
@@ -238,9 +239,13 @@ export interface CalculatorResult {
 
 export interface AuthResponse {
   access_token: string;
+  refresh_token?: string;
   token_type: string;
   expires_in: number;
+  refresh_expires_in?: number;
   user: UserProfile;
+  requires_email_verification?: boolean;
+  requires_phone_verification?: boolean;
 }
 
 export interface PaymentOrderResponse extends PaymentRecord {}
@@ -249,3 +254,6 @@ export interface ApiError {
   error?: { code?: string; message?: string };
   detail?: string | { code?: string; message?: string };
 }
+
+export type Page = 'landing' | 'overview' | 'shipments' | 'quotes' | 'payments' | 'copilot' | 'risk' | 'analytics' | 'carriers' | 'documents' | 'settings';
+export type IconName = 'overview' | 'shipments' | 'quotes' | 'risk' | 'copilot' | 'payments' | 'analytics' | 'settings' | 'bell' | 'plus' | 'search' | 'arrow' | 'refresh' | 'clock' | 'check' | 'warning' | 'external' | 'menu' | 'logout' | 'shield' | 'truck' | 'wallet' | 'spark' | 'calendar' | 'filter' | 'close' | 'route' | 'file' | 'database' | 'activity' | 'chevron';

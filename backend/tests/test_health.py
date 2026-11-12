@@ -11,6 +11,15 @@ def test_health_check_returns_ok():
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ok"
-    assert data["app"] == "freightpilot-ai"
-    assert data["mode"] == "sandbox"
+    assert data["status"] == "healthy"
+    assert data["service"] == "FreightPilot AI Backend"
+    assert set(data) == {"status", "service"}
+
+
+def test_root_endpoint():
+    response = client.get("/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["service"] == "FreightPilot AI Backend"
+    assert data["status"] == "running"
+    assert "version" in data

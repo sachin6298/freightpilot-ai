@@ -69,7 +69,7 @@ export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({
                 <span className="cost-val">{formatCurrency(quote.base_amount, quote.currency)}</span>
               </div>
               <div className="cost-row">
-                <span>Surcharges &amp; Port Fees:</span>
+                <span>Surcharges & Port Fees:</span>
                 <span className="cost-val">{formatCurrency(quote.surcharge_amount, quote.currency)}</span>
               </div>
 
@@ -134,7 +134,7 @@ export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({
 
           {/* Operational & Vessel Specs */}
           <div className="detail-section">
-            <h4 className="detail-section-title">Operational &amp; Vessel Specifications</h4>
+            <h4 className="detail-section-title">Operational & Vessel Specifications</h4>
             <div className="spec-grid">
               <div className="spec-tile">
                 <span className="tile-label">Transit Duration</span>
@@ -165,7 +165,7 @@ export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({
 
           {/* Payment Terms & Conditions */}
           <div className="detail-section">
-            <h4 className="detail-section-title">Commercial &amp; Payment Terms</h4>
+            <h4 className="detail-section-title">Commercial & Payment Terms</h4>
             <div className="terms-container">
               <div className="term-entry">
                 <strong>Payment Schedule:</strong>{' '}
