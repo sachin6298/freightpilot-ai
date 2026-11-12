@@ -50,8 +50,8 @@ FreightPilot_AI/
 
 ## Requirements
 
-- Python 3.11 or newer
-- Node.js 20 or newer and npm
+- Python 3.12.x
+- Node.js 24.12.0 or newer within Node 24, and npm 11 or newer
 - PayPal Developer Sandbox app credentials for checkout
 - Optional Google OAuth client ID, Apple Developer Services ID/key, and Twilio SMS credentials for external sign-in providers
 - Optional AI provider credentials for externally hosted AI analysis
@@ -62,13 +62,13 @@ FreightPilot_AI/
 
 ```powershell
 cd backend
-py -3 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-The archive includes a placeholder `backend/.env`; edit it rather than copying the example over it. Keep `DEMO_MODE=true`, `PAYPAL_ENV=sandbox`, and `AUTH_REQUIRED=false` for a local demo. Set a unique `JWT_SECRET_KEY`. The Google client ID belongs in this file. Apple also needs its Team ID, Key ID, `.p8` private key and exact HTTPS Return URL. PayPal, email, SMS and AI credentials remain server-side.
+Create `backend/.env` by copying `backend/.env.example` if it does not exist. Keep `DEMO_MODE=true`, `PAYPAL_ENV=sandbox`, and `AUTH_REQUIRED=false` for a local demo. Set a unique `JWT_SECRET_KEY`. The Google client ID belongs in this file. Apple also needs its Team ID, Key ID, `.p8` private key and exact HTTPS Return URL. PayPal, email, SMS and AI credentials remain server-side.
 
 Initialize or upgrade the local database:
 
@@ -98,7 +98,7 @@ cd frontend
 npm ci
 ```
 
-The archive includes a browser-safe placeholder `frontend/.env.local`. Edit it:
+Create `frontend/.env.local` by copying `frontend/.env.example` if it does not exist:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000
@@ -113,6 +113,7 @@ Only public client identifiers belong in Vite variables. Never put a Google clie
 Build and run:
 
 ```powershell
+npm run typecheck
 npm run build
 npm run dev
 ```

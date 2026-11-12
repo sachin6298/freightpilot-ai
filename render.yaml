@@ -2,7 +2,7 @@
 # All credentials are entered in Render Dashboard.
 services:
   - type: web
-    name: freightpilot-api
+    name: freightpilot-backend
     runtime: python
     plan: 0.5c-512mb
     region: singapore
@@ -10,11 +10,11 @@ services:
     buildCommand: pip install -r requirements.txt
     preDeployCommand: alembic upgrade head
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    healthCheckPath: /health/ready
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.8
+        value: 3.12.10
       - key: APP_ENV
         value: production
       - key: DEMO_MODE
@@ -81,19 +81,7 @@ services:
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
       - key: STORAGE_BACKEND
-        value: s3
-      - key: S3_BUCKET
-        sync: false
-      - key: S3_REGION
-        value: auto
-      - key: S3_ENDPOINT_URL
-        value: ""
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: DOCUMENT_STORAGE_PATH
-        value: ./var/documents
+        value: postgresql
       - key: MAX_UPLOAD_BYTES
         value: "10485760"
       - key: CLAMAV_HOST
@@ -123,7 +111,7 @@ services:
       - key: VITE_API_BASE_URL
         fromService:
           type: web
-          name: freightpilot-api
+          name: freightpilot-backend
           property: url
       - key: VITE_PAYPAL_CLIENT_ID
         sync: false
@@ -132,6 +120,20 @@ services:
       - key: VITE_APPLE_CLIENT_ID
         sync: false
       - key: VITE_APPLE_REDIRECT_URI
+        sync: false
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: VITE_FIREBASE_PROJECT_ID
+        sync: false
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        sync: false
+      - key: VITE_FIREBASE_APP_ID
+        sync: false
+      - key: VITE_FIREBASE_MEASUREMENT_ID
         sync: false
 
 databases:

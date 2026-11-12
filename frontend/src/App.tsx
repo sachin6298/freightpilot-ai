@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ConfirmationResult, RecaptchaVerifier } from 'firebase/auth';
 import { NewShipmentModal } from './components/NewShipmentModal';
 import { PayPalCheckout } from './components/PayPalCheckout';
 import { SvgDonutChart, SvgAreaChart, SvgRiskGauge, SvgBarComparison } from './components/SvgCharts';
@@ -15,7 +16,8 @@ import {
   fetchShipmentQuotes, fetchShipmentEstimate, fetchShipments, fetchTracking,
   getAuthToken, login, registerBuyer, registerSeller, paypalClientId, refreshCarrierQuotes,
   resetDemoData, setAuthToken, oauthSignIn, requestPhoneLoginOtp, verifyPhoneLoginOtp, updateAccountPhone,
-  linkFirebasePhone, deleteAccount, requestPasswordReset, resetPassword,
+  linkFirebasePhone, verifyFirebasePhone, deleteAccount, requestPasswordReset, resetPassword,
+  clearAuthTokens, setRefreshToken,
 } from './api';
 import {
   AnalyticsOverview, CarrierCatalog, CarrierPerformance, CopilotResult, NotificationItem,
@@ -144,7 +146,7 @@ function PhoneBrandIcon(): React.ReactElement {
   );
 }
 
-function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken = null }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string) => void; initialMode?: 'login' | 'register' | 'reset-password'; resetToken?: string | null }): React.ReactElement {
+function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken = null }: { onClose: () => void; onAuthenticated: (user: UserProfile, token: string, refreshToken?: string | null) => void; initialMode?: 'login' | 'register' | 'reset-password'; resetToken?: string | null }): React.ReactElement {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset-password'>(initialMode);
   const [newPassword, setNewPassword] = useState('');
   const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
@@ -159,6 +161,8 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
   const [otpRequested, setOtpRequested] = useState(false);
+  const firebaseConfirmationRef = useRef<ConfirmationResult | null>(null);
+  const firebaseRecaptchaRef = useRef<RecaptchaVerifier | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -170,13 +174,20 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
   const appleClientId = import.meta.env.VITE_APPLE_CLIENT_ID || '';
   const appleRedirectUri = import.meta.env.VITE_APPLE_REDIRECT_URI || '';
+  const firebasePhoneAuthEnabled = Boolean(import.meta.env.VITE_FIREBASE_API_KEY && import.meta.env.VITE_FIREBASE_AUTH_DOMAIN && import.meta.env.VITE_FIREBASE_PROJECT_ID && import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID && import.meta.env.VITE_FIREBASE_APP_ID);
+
+  useEffect(() => () => {
+    firebaseRecaptchaRef.current?.clear();
+    firebaseRecaptchaRef.current = null;
+    firebaseConfirmationRef.current = null;
+  }, []);
 
   const completeOAuth = useCallback(async (provider: 'google' | 'apple', idToken: string) => {
     setBusy(true);
     setError(null);
     try {
       const response = await oauthSignIn(provider, idToken, nonce);
-      onAuthenticatedRef.current(response.user, response.access_token);
+      onAuthenticatedRef.current(response.user, response.access_token, response.refresh_token);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : `${provider} sign-in failed.`);
     } finally {
@@ -248,7 +259,7 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken
           contact_phone: contactPhone,
         });
       }
-      onAuthenticated(response.user, response.access_token);
+      onAuthenticated(response.user, response.access_token, response.refresh_token);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Authentication failed.');
     } finally {
@@ -261,7 +272,18 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken
     setBusy(true);
     setError(null);
     try {
-      await requestPhoneLoginOtp(phoneNumber.trim());
+      if (firebasePhoneAuthEnabled) {
+        const { createRecaptchaVerifier, sendPhoneOtp } = await import('./lib/firebaseAuth');
+        firebaseRecaptchaRef.current?.clear();
+        const verifier = createRecaptchaVerifier('recaptcha-container');
+        firebaseRecaptchaRef.current = verifier;
+        const result = await sendPhoneOtp(phoneNumber.trim(), verifier);
+        firebaseConfirmationRef.current = result.confirmationResult;
+      } else {
+        // Local development fallback: backend/.env may use SMS_PROVIDER=console.
+        // Production Firebase deployments must provide the public Firebase web config.
+        await requestPhoneLoginOtp(phoneNumber.trim());
+      }
       setOtpRequested(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not request an SMS code.');
@@ -275,8 +297,18 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken
     setBusy(true);
     setError(null);
     try {
-      const response = await verifyPhoneLoginOtp(phoneNumber.trim(), otp.trim());
-      onAuthenticated(response.user, response.access_token);
+      if (firebaseConfirmationRef.current) {
+        const { verifyPhoneOtp } = await import('./lib/firebaseAuth');
+        const verified = await verifyPhoneOtp(firebaseConfirmationRef.current, otp.trim());
+        const response = await verifyFirebasePhone(verified.idToken, verified.phoneNumber);
+        firebaseConfirmationRef.current = null;
+        firebaseRecaptchaRef.current?.clear();
+        firebaseRecaptchaRef.current = null;
+        onAuthenticated(response.user, response.access_token, response.refresh_token);
+      } else {
+        const response = await verifyPhoneLoginOtp(phoneNumber.trim(), otp.trim());
+        onAuthenticated(response.user, response.access_token, response.refresh_token);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The SMS code could not be verified.');
     } finally {
@@ -308,7 +340,7 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken
       const authorizationCode = result.authorization?.code;
       if (!authorizationCode) throw new Error('Apple did not return an authorization code.');
       const response = await oauthSignIn('apple', '', nonce, authorizationCode);
-      onAuthenticatedRef.current(response.user, response.access_token);
+      onAuthenticatedRef.current(response.user, response.access_token, response.refresh_token);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Apple sign-in failed.');
     } finally {
@@ -457,7 +489,7 @@ function AuthModal({ onClose, onAuthenticated, initialMode = 'login', resetToken
           </div>}
           {error && <div className="inline-alert inline-alert-danger">{error}</div>}
           <button className="btn-auth-submit" disabled={busy}>{busy ? 'Please wait…' : otpRequested ? 'Verify code & sign in' : 'Send SMS code'}</button>
-          {otpRequested && <button type="button" className="text-button" onClick={() => { setOtpRequested(false); setOtp(''); }}>Use a different number</button>}
+          {otpRequested && <button type="button" className="text-button" onClick={() => { setOtpRequested(false); setOtp(''); firebaseConfirmationRef.current = null; firebaseRecaptchaRef.current?.clear(); firebaseRecaptchaRef.current = null; }}>Use a different number</button>}
           <button type="button" className="auth-forgot-link" style={{display:'block',marginTop:8}} onClick={() => { setMethod('password'); setError(null); }}>← Back to email login</button>
         </form> : (mode === 'register' || method === 'password') && <form onSubmit={submit} className="form-stack auth-fields">
           <div className="auth-input-group">
@@ -663,7 +695,7 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     const token = getAuthToken();
     if (!token) return;
-    fetchCurrentUser().then((user) => { setCurrentUser(user); setAccountPhone(user.phone_number || ''); }).catch(() => { setAuthToken(null); setCurrentUser(null); });
+    fetchCurrentUser().then((user) => { setCurrentUser(user); setAccountPhone(user.phone_number || ''); }).catch(() => { clearAuthTokens(); setCurrentUser(null); });
   }, []);
 
   // Periodic health check for Settings page
@@ -756,8 +788,9 @@ export default function App(): React.ReactElement {
     finally { setCarrierBusy(false); }
   };
 
-  const handleAuthSuccess = useCallback((user: UserProfile, token: string) => {
+  const handleAuthSuccess = useCallback((user: UserProfile, token: string, refreshToken?: string | null) => {
     setAuthToken(token);
+    setRefreshToken(refreshToken ?? null);
     setCurrentUser(user);
     setAccountPhone(user.phone_number || '');
     setAccountPhoneOtp('');
@@ -1093,7 +1126,7 @@ export default function App(): React.ReactElement {
             try {
               await deleteAccount(deleteAccountPassword, deleteAccountConfirm);
               setDeleteAccountBusy(false);
-              setAuthToken(null);
+              clearAuthTokens();
               setCurrentUser(null);
               setPage('landing');
               showToast('Account deleted successfully. You can contact support within 30 days to restore it.');
@@ -1206,7 +1239,7 @@ export default function App(): React.ReactElement {
         onNavigate={(nextPage) => setPage(nextPage)}
         onSelectShipment={(id) => { void selectShipment(id); }}
         onSignIn={() => openAuth('login')}
-        onSignOut={() => { setAuthToken(null); setCurrentUser(null); setPage('landing'); showToast('Signed out.'); void loadPortfolio(); }}
+        onSignOut={() => { clearAuthTokens(); setCurrentUser(null); setPage('landing'); showToast('Signed out.'); void loadPortfolio(); }}
         onPublicSite={() => setPage('landing')}
         onNewShipment={() => setNewShipmentOpen(true)}
         onSearchChange={setSearch}

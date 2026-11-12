@@ -17,7 +17,7 @@ This backend upgrade extends the uploaded FreightPilot AI codebase. It is a **mo
 
 ## Requirements
 
-- Python 3.10+ (Python 3.12/3.13 are suitable)
+- Python 3.12.x (use the same minor version in local development and deployment)
 - PayPal Developer Sandbox REST app credentials to perform an actual Sandbox checkout
 - Optional: PostgreSQL and `psycopg` (already included in requirements) for hosted deployments
 
@@ -27,7 +27,7 @@ Run these commands from the project root:
 
 ```powershell
 cd .\backend
-py -3 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
@@ -108,7 +108,7 @@ The webhook handler verifies messages with PayPal's webhook signature verificati
 - https://developer.paypal.com/api/rest/webhooks/rest/
 - https://developer.paypal.com/api/rest/webhooks
 
-**Important:** This backend package does not add the PayPal JavaScript SDK or a checkout button to the React frontend. The frontend must call `POST /api/payments/create-order`, render the returned PayPal order ID through the PayPal JS SDK, then call `POST /api/payments/{payment_id}/capture` after approval. Until that frontend work is done, a user cannot complete checkout from the website UI.
+**Frontend checkout:** The React frontend includes a PayPal JavaScript SDK checkout component. It reads the public client ID from `VITE_PAYPAL_CLIENT_ID`; the backend independently authenticates with `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`, then verifies and captures the approved order. A successful Sandbox checkout still requires matching Sandbox credentials on both sides and a Sandbox buyer account.
 
 ## Authentication and deployment settings
 
