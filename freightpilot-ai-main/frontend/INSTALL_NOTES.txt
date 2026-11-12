@@ -1,5 +1,0 @@
-FREIGHTPILOT UI ENHANCEMENTS
-
-Extract this ZIP into the existing frontend folder, preserving folder paths. It contains only changed/new frontend source files. It does not include backend files, .env files, node_modules, or package configuration.
-
-Theme starts in light mode. The new sun/moon switch toggles and remembers dark mode. Workspace on the public navigation opens an animated confirmation dialog. Brand coral/orange accent has been changed to teal.
