@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/lib/firebase.ts","./src/lib/firebaseauth.ts"],"errors":true,"version":"6.0.3"}
