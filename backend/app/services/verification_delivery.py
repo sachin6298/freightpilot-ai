@@ -47,11 +47,12 @@ def send_phone_otp(phone_number: str, otp: str) -> None:
         return
 
     if provider == "firebase" and settings.FIREBASE_PROJECT_ID:
-        # Firebase Phone Authentication - frontend-driven via Firebase Client SDK
-        # The backend doesn't send the OTP; Firebase handles it client-side
-        # This is a no-op for the Firebase flow; kept for compatibility
-        logger.info("FIREBASE SMS VERIFICATION (frontend-driven) recipient=%s", phone_number)
-        return
+        # Firebase sends OTPs from the browser SDK. Returning success here would
+        # falsely tell the user an SMS was sent when this backend has no SMS sender.
+        raise DeliveryNotConfigured(
+            "Firebase Phone Auth sends codes through the frontend SDK. Configure VITE_FIREBASE_* "
+            "in the frontend and use the Firebase ID-token verification endpoint."
+        )
 
     raise DeliveryNotConfigured("SMS delivery is not configured. Set SMS_PROVIDER=firebase with FIREBASE_PROJECT_ID and FIREBASE_SERVICE_ACCOUNT_JSON.")
 
