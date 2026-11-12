@@ -81,32 +81,11 @@
 }
 
 .lp-login {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 42px;
-    padding: 0 21px;
-    background: var(--lp-navy);
-    border: 1px solid var(--lp-navy);
-    border-radius: 8px;
-    color: #ffffff;
+    background: transparent;
+    border: none;
+    color: var(--lp-navy);
     font-weight: 700;
     font-size: 13px;
-    line-height: 1;
-    cursor: pointer;
-    transition: background .2s ease, border-color .2s ease, transform .2s ease, box-shadow .2s ease;
-}
-
-.lp-login:hover {
-    background: var(--lp-blue);
-    border-color: var(--lp-blue);
-    box-shadow: 0 5px 14px rgba(21, 59, 85, .18);
-    transform: translateY(-1px);
-}
-
-.lp-login:focus-visible {
-    outline: 3px solid rgba(40, 123, 157, .35);
-    outline-offset: 3px;
 }
 
 .lp-primary-btn {
